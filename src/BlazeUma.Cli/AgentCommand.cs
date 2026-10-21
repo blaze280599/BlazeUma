@@ -64,7 +64,7 @@ internal static class AgentCommand
         switch (args[0])
         {
             case "inject":
-                string path = dll ?? FindAgentDll()
+                string path = dll ?? AgentLocator.Find()
                     ?? throw new FileNotFoundException("Agent DLL not found; build it with cmake (see agent/) or pass --dll.");
                 Console.WriteLine(Injector.Inject(target, path)
                     ? $"Agent loaded into PID {target} from {path}"
@@ -89,33 +89,13 @@ internal static class AgentCommand
         }
     }
 
-    /// <summary>Resolves UnityEvent.Invoke once per CLI invocation; the agent takes care of main-thread work.</summary>
     private static int Tap(int? pid, string addrText)
     {
         ulong buttonAddr = Convert.ToUInt64(addrText.StartsWith("0x") ? addrText[2..] : addrText, 16);
-
         using var reader = GameReader.Open(pid);
-        var r = reader.ManagedReader;
-        ulong buttonClass = r.Runtime.GetClass(ButtonFinder.ButtonClass);
-        if (buttonClass == 0) throw new InvalidOperationException("Gallop.ButtonCommon is not initialised yet.");
-
-        // m_OnClick lives on UnityEngine.UI.Button, a parent of ButtonCommon; find its offset via the field table.
-        var onClick = r.Runtime.FindField(buttonClass, "m_OnClick")
-            ?? throw new InvalidOperationException("m_OnClick field not found on this button's class chain.");
-        ulong eventObj = r.Memory.ReadPointer(buttonAddr + (ulong)onClick.Field.Offset);
-        if (eventObj == 0) return Fail("button has no m_OnClick instance; it has no handlers assigned");
-
-        // Invoke lives on UnityEngine.Events.UnityEvent (the parameterless, public virtual Invoke).
-        ulong unityEventClass = r.Runtime.GetClass("UnityEngine.Events.UnityEvent");
-        if (unityEventClass == 0) return Fail("UnityEngine.Events.UnityEvent not initialised yet.");
-        var (methodInfo, fnPtr) = r.Runtime.RequireMethod(unityEventClass, "Invoke");
-
-        using var agent = AgentClient.Connect(reader.ProcessId);
-        string reply = agent.Send($"tap {eventObj:x} {fnPtr:x} {methodInfo:x}");
+        string reply = new ButtonTapper(reader).Tap(buttonAddr);
         Console.WriteLine(reply);
         return reply.StartsWith("ok") ? 0 : 1;
-
-        static int Fail(string message) { Console.Error.WriteLine(message); return 1; }
     }
 
     /// <summary>Finds a tappable button whose path contains <paramref name="query"/> (case-insensitive) and taps it.</summary>
@@ -157,20 +137,5 @@ internal static class AgentCommand
         {
             return $"No agent answering in PID {pid} (not injected, or still starting).";
         }
-    }
-
-    /// <summary>agent/build/Release/BlazeUma.Agent.dll, searched from the working directory and the exe upwards.</summary>
-    private static string? FindAgentDll()
-    {
-        string relative = Path.Combine("agent", "build", "Release", Injector.AgentFileName);
-        foreach (string start in new[] { Environment.CurrentDirectory, AppContext.BaseDirectory })
-        {
-            for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
-            {
-                string candidate = Path.Combine(dir.FullName, relative);
-                if (File.Exists(candidate)) return candidate;
-            }
-        }
-        return null;
     }
 }

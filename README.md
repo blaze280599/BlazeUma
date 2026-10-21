@@ -74,7 +74,11 @@ dotnet run --project src/BlazeUma.Cli -- agent unload    # agent removes itself
 dotnet run --project src/BlazeUma.Cli -- buttons         # list tappable buttons on the current screen
 dotnet run --project src/BlazeUma.Cli -- buttons --all   # include non-tappable
 dotnet run --project src/BlazeUma.Cli -- agent tap 0x<addr>   # invoke a button's click on Unity's main thread
-dotnet run --project src/BlazeUma.Cli -- agent tap-path Details   # tap by field-path substring (aliases: Rest, Training, Close, …)
+dotnet run --project src/BlazeUma.Cli -- agent tap-path Details   # tap by field-path substring (aliases: Rest, Training, Close, Back, …)
+
+dotnet run --project src/BlazeUma.Cli -- auto plan                 # taps the advisor's pick would need (dry run)
+dotnet run --project src/BlazeUma.Cli -- auto run                  # supervised: Enter confirms each tap, q stops
+dotnet run --project src/BlazeUma.Cli -- auto run --action "Train Wit"   # a specific action instead of the advisor's pick
 ```
 
 ## How the reader finds things

@@ -13,7 +13,10 @@ using BlazeUma.Memory.Il2Cpp;
 // --advise --watch also logs each turn (advice + measured outcome) to DIR/career-*.jsonl (default: logs).
 
 const string Usage = "usage: BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]] [--log DIR | --no-log]\n"
-    + "       " + AgentCommand.Usage;
+    + "       " + AgentCommand.Usage + "\n"
+    + "       " + AutoCommand.Usage;
+
+Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 if (args.Length > 0 && args[0] == "agent")
 {
@@ -26,6 +29,16 @@ if (args.Length > 0 && args[0] == "agent")
 }
 if (args.Length > 0 && args[0] == "buttons")
     return ButtonsCommand.Run(args[1..]);
+if (args.Length > 0 && args[0] == "auto")
+{
+    try { return AutoCommand.Run(args[1..]); }
+    catch (Exception e) when (e is InvalidOperationException or FileNotFoundException or System.ComponentModel.Win32Exception
+                                  or TimeoutException or IOException or MemoryReadException or UnsupportedLayoutException)
+    {
+        Console.Error.WriteLine(e.Message);
+        return 1;
+    }
+}
 int? pid = null;
 string? metadata = null, master = null, logDir = "logs";
 double? watch = null;
@@ -61,7 +74,6 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
 
 var formatter = AdviceFormatter.ForConsole(verbose);
 bool redraw = watch is not null && !Console.IsOutputRedirected;
-Console.OutputEncoding = System.Text.Encoding.UTF8;
 var log = advise && watch is not null && logDir is not null
     ? new CareerLog(logDir, new JsonSerializerOptions(json) { WriteIndented = false })
     : null;

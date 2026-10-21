@@ -104,6 +104,16 @@ Work through these in order, one at a time. Each item says how we know it is don
    `WH_GETMESSAGE` hook (no code patching). Live: tapped `DetailButton` on turn 28, Umamusume Details
    panel opened as if the user had tapped it, game and reader unaffected afterwards, `agent unload`
    removed the hook and module cleanly.
+   Step 4c: supervised runner. `TrainingMenu` reads each training tile's command id (from its TurnInfo)
+   and `_isSelect` (live turn 28: 0 Speed 101 selected, 1 Stamina 105, 2 Power 102, 3 Guts 103, 4 Wit 106;
+   a selected tile executes on the first tap). `ButtonTapper` (Automation) is the shared tap path and
+   auto-injects the agent. `ActionPlanner` maps advisor picks to steps (Training: open menu, select tile
+   unless selected, tap selected tile; Rest / Recreation / Infirmary: one tap, then dialogs).
+   `auto plan` prints the steps; `auto run` asks before every tap, waits for the expected result
+   (menu open, tile selected, dialog, turn advance or event), and lists any dialog's buttons so the user
+   picks. Races, skills and events are reported as "do by hand". Dry runs checked live on turn 28.
+   Also: UIManager footer walked (Back/Skip/Quick/Log/Menu), `Back` alias.
+
    Step 4b: ButtonFinder walks List<T> and reference arrays too, with defensive catches so a bogus
    pointer in one field doesn't abort the whole walk (parent chain capped at 10, child reads guarded).
    Buttons command no longer calls full Snapshot() (which can race during screen transitions).
