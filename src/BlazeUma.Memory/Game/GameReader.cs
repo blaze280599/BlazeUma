@@ -62,11 +62,15 @@ public sealed class GameReader : IDisposable
         }
     }
 
+    /// <summary>Current turn, or null outside a career (same rule as the snapshot itself).</summary>
     private int? ReadTurn()
     {
         ulong sm = SingleMode();
-        return sm == 0 ? null : _r.ObscuredInt(sm, "_totalTurnNum");
+        return sm != 0 && _r.Bool(sm, "_isPlaying") ? _r.ObscuredInt(sm, "_totalTurnNum") : null;
     }
+
+    /// <summary>True once the game process this reader is attached to has exited.</summary>
+    public bool GameExited => !System.Diagnostics.Process.GetProcessesByName(GameProcess.ExecutableName).Any(p => p.Id == ProcessId);
 
     private ulong SingleMode()
     {

@@ -72,9 +72,13 @@ Work through these in order, one at a time. Each item says how we know it is don
    skill points +32 (estimate 25), fans +2,419 from the race (base 2,000, so about +21% bonus) plus
    +500 from the reporter's post-race scene.
 
-7. [ ] **Game restart** (live: close and reopen the game mid-career)
+7. [x] **Game restart** (live: close and reopen the game mid-career)
    The reader should reattach with no changes.
    *Done when:* snapshot after restart matches the screen; note the result in research/.
+   Result: after closing the game, restarting it and resuming the career, the advisor worked with no
+   code or layout changes (static roots and class lookup survived the new process). Watch mode now also
+   detects the game closing, shows "Umamusume was closed" and reconnects by itself when it restarts;
+   the main menu shows "not in a career" instead of a retry error (the turn re-check ignored `_isPlaying`).
 
 ## Next: act on the advice
 

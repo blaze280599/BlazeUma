@@ -46,44 +46,98 @@ var json = new JsonSerializerOptions
 var cancel = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
 
+var formatter = AdviceFormatter.ForConsole(verbose);
+bool redraw = watch is not null && !Console.IsOutputRedirected;
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+var log = advise && watch is not null && logDir is not null
+    ? new CareerLog(logDir, new JsonSerializerOptions(json) { WriteIndented = false })
+    : null;
+
+// In watch mode the reader survives the game closing and reopening: it waits, then reattaches.
+GameReader? reader = null;
+MasterDatabase? data = null;
+CareerAdvisor? advisor = null;
+string? shownKey = null;
+int failures = 0;
+
+// Prints only when `key` changes (keys leave out clocks); in an interactive watch it redraws in place.
+void Show(string key, Func<string> render)
+{
+    if (key == shownKey) return;
+    if (redraw) Console.Clear();
+    Console.WriteLine(render());
+    shownKey = key;
+}
+
+// Status without advice: a coloured panel for people, a JSON line for scripts (snapshot mode).
+void Status(string title, string detail, bool problem = false) =>
+    Show($"{title}\n{detail}\n{problem}", () => advise
+        ? formatter.Status(title, detail, problem)
+        : JsonSerializer.Serialize(new { status = title, detail }, json));
+
 try
 {
-    using var reader = GameReader.Open(pid, metadata);
-    using var data = advise ? MasterDatabase.Open(master ?? MasterDatabase.PathInGameDirectory(reader.GameDirectory)) : null;
-    var advisor = data is null ? null : new CareerAdvisor(data);
-    var formatter = AdviceFormatter.ForConsole(verbose);
-    bool redraw = watch is not null && !Console.IsOutputRedirected;
-    Console.OutputEncoding = System.Text.Encoding.UTF8;
-    var log = advisor is not null && watch is not null && logDir is not null
-        ? new CareerLog(logDir, new JsonSerializerOptions(json) { WriteIndented = false })
-        : null;
-    Advice? lastAdvice = null;
     do
     {
         try
         {
+            if (reader is null)
+            {
+                reader = GameReader.Open(pid, metadata);
+                if (advise && data is null)
+                {
+                    data = MasterDatabase.Open(master ?? MasterDatabase.PathInGameDirectory(reader.GameDirectory));
+                    advisor = new CareerAdvisor(data);
+                }
+            }
             var snapshot = reader.Snapshot();
+            failures = 0;
             if (advisor is null)
             {
-                Console.WriteLine(JsonSerializer.Serialize(snapshot, json));
+                string snapshotJson = JsonSerializer.Serialize(snapshot, json);
+                Show(snapshotJson, () => snapshotJson);
             }
             else
             {
-                var current = advisor.Advise(snapshot);
-                log?.Observe(snapshot, current);
-                if (lastAdvice is null || !SameAdvice(current, lastAdvice))
-                {
-                    if (redraw) Console.Clear();
-                    Console.WriteLine(formatter.Format(current, snapshot.ReadAt));
-                    if (log?.CurrentPath is { } path) Console.WriteLine(formatter.Footer($"logging to {path}"));
-                }
-                lastAdvice = current;
+                var advice = advisor.Advise(snapshot);
+                log?.Observe(snapshot, advice);
+                Show(formatter.Format(advice, DateTimeOffset.MinValue), () => formatter.Format(advice, snapshot.ReadAt)
+                    + (log?.CurrentPath is { } path ? Environment.NewLine + formatter.Footer($"logging to {path}") : ""));
             }
         }
-        catch (Exception e) when (watch is not null && e is MemoryReadException or InconsistentSnapshotException)
+        catch (InvalidOperationException e) when (watch is not null)
         {
-            // Transient in watch mode (screen changes, objects being replaced); report and keep polling.
-            Console.WriteLine(JsonSerializer.Serialize(new { status = "unavailable", reason = e.Message }, json));
+            // Not running yet, or still starting up (GameAssembly.dll not loaded).
+            reader?.Dispose();
+            reader = null;
+            Status("Waiting for Umamusume", e.Message.Contains("not running")
+                ? "The game is not running. Start it and BlazeUma will connect automatically."
+                : e.Message.Contains("More than one")
+                    ? "More than one game window is open; close one, or pass --pid."
+                    : e.Message.StartsWith("PID")
+                        ? e.Message
+                        : "The game is still starting up…");
+        }
+        catch (Exception e) when (watch is not null && e is MemoryReadException or InconsistentSnapshotException or UnsupportedLayoutException)
+        {
+            failures++;
+            if (reader is not null && reader.GameExited)
+            {
+                reader.Dispose();
+                reader = null;
+                Status("Umamusume was closed", "Waiting for the game to start again; BlazeUma will reconnect automatically.");
+            }
+            else if (reader is null)
+            {
+                // Attaching failed: right after launch the IL2CPP class cache is not ready yet. Keep retrying;
+                // after ~30 tries show the reason in case the game was updated and a layout really changed.
+                Status("Connecting to Umamusume", failures < 30 ? "The game is still loading…" : e.Message, problem: failures >= 30);
+            }
+            else if (failures >= 5)
+            {
+                // A few failures are normal while screens change; only report when it persists.
+                Status("Can't read the game right now", e.Message, problem: true);
+            }
         }
         if (watch is null) break;
         try { await Task.Delay(TimeSpan.FromSeconds(watch.Value), cancel.Token); }
@@ -94,11 +148,12 @@ try
 catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException
                               or InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
 {
-    Console.Error.WriteLine(JsonSerializer.Serialize(new { status = "error", type = e.GetType().Name, message = e.Message }));
+    if (advise) Console.Error.WriteLine(formatter.Status("BlazeUma could not read the game", e.Message, problem: true, watching: false));
+    else Console.Error.WriteLine(JsonSerializer.Serialize(new { status = "error", type = e.GetType().Name, message = e.Message }));
     return 1;
 }
-
-static bool SameAdvice(Advice a, Advice b) =>
-    a.Header == b.Header && a.Summary == b.Summary
-    && a.Options.Select(o => o.ToString()).SequenceEqual(b.Options.Select(o => o.ToString()))
-    && a.Notes.SequenceEqual(b.Notes);
+finally
+{
+    reader?.Dispose();
+    data?.Dispose();
+}

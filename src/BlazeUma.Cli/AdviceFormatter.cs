@@ -30,13 +30,29 @@ internal sealed class AdviceFormatter(bool verbose, bool color, int width)
 
     public string Footer(string text) => Dim(" " + Fit(text, 1));
 
+    /// <summary>A status panel for when there is no advice: game not running, no career, unreadable state.</summary>
+    public string Status(string title, string detail, bool problem = false, bool watching = true)
+    {
+        string rule = new('─', Math.Min(width, 90));
+        string heading = " ● " + title;
+        var lines = new List<string>
+        {
+            Dim(rule),
+            problem ? Paint(heading, "1;31") : Paint(heading, "1;33"),
+            "   " + Fit(detail, 3),
+            Dim(rule),
+        };
+        if (watching) lines.Add(Dim($" {DateTime.Now:HH:mm:ss}  Ctrl+C to quit"));
+        return string.Join(Environment.NewLine, lines);
+    }
+
     public string Format(Advice advice, DateTimeOffset readAt)
     {
         var sb = new StringBuilder();
         string rule = new('─', Math.Min(width, 90));
         sb.AppendLine(Dim(rule));
         sb.AppendLine(" " + Cyan(Fit(advice.Header, 1)) + Dim($"   {readAt:HH:mm:ss}"));
-        sb.AppendLine(" " + Green("▶ " + advice.Summary));
+        sb.AppendLine(" " + (advice.Situation == Situation.NoCareer ? Yellow("● " + advice.Summary) : Green("▶ " + advice.Summary)));
         sb.AppendLine(Dim(rule));
 
         int labelWidth = advice.Options.Take(MaxOptions).Select(o => o.Label.Length).DefaultIfEmpty(10).Max() + 2;

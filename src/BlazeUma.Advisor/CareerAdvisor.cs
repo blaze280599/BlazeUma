@@ -13,7 +13,8 @@ public sealed class CareerAdvisor(IGameData data)
     {
         var warnings = snapshot.Errors.Select(e => new Note("Read error", e)).ToList();
         if (!snapshot.CareerActive || snapshot.Character is null || snapshot.Turn is null)
-            return new Advice(Situation.NoCareer, "No career", "No career in progress.", [], warnings, []);
+            return new Advice(Situation.NoCareer, "Umamusume is open, not in a career",
+                "Start or resume a career to get advice", [], warnings, []);
 
         var ctx = new CareerContext(snapshot, data);
         var values = new ValueModel(ctx);
