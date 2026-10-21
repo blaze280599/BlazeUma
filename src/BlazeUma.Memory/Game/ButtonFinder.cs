@@ -48,6 +48,8 @@ public sealed class ButtonFinder(ManagedReader reader)
         return found;
     }
 
+    private const int MaxParentChain = 10;
+
     private void Walk(ulong obj, string path, int depth, int maxDepth, ulong buttonClass,
         List<FoundButton> found, HashSet<ulong> visited)
     {
@@ -58,10 +60,23 @@ public sealed class ButtonFinder(ManagedReader reader)
         catch (MemoryReadException) { return; }
         if (!MemoryExtensions.IsPlausiblePointer(klass)) return;
 
-        // Stop at buttons themselves — their internals are click targets, not more buttons.
-        for (ulong k = klass; k != 0; k = reader.Runtime.Parent(k))
+        // Walk the inheritance chain once, defensively (a garbage object may yield a plausible-looking
+        // class pointer whose Parent chain is nonsense).
+        var ancestors = new List<ulong>(MaxParentChain);
+        try
         {
-            if (k != buttonClass) continue;
+            for (ulong k = klass; k != 0 && ancestors.Count < MaxParentChain; k = reader.Runtime.Parent(k))
+            {
+                if (!MemoryExtensions.IsPlausiblePointer(k)) break;
+                ancestors.Add(k);
+            }
+        }
+        catch (MemoryReadException) { return; }
+        if (ancestors.Count == 0) return;
+
+        // Stop at buttons themselves — their internals are click targets, not more buttons.
+        if (ancestors.Contains(buttonClass))
+        {
             try
             {
                 string name = reader.Runtime.QualifiedClassName(klass);
@@ -73,22 +88,43 @@ public sealed class ButtonFinder(ManagedReader reader)
             return;
         }
 
-        // Recurse into reference fields (own class and inherited). Skip Unity natives and system containers.
-        for (ulong k = klass; k != 0; k = reader.Runtime.Parent(k))
+        // Recurse into reference / collection fields (own class and inherited). Skip Unity natives.
+        foreach (ulong k in ancestors)
         {
             string ownerName = SafeName(k);
             if (ownerName is "System.Object" or "UnityEngine.Object" or "UnityEngine.Component" or "UnityEngine.MonoBehaviour") break;
             IReadOnlyList<Il2CppField> fields;
-            try { fields = reader.Runtime.DeclaredFields(k); } catch (UnsupportedLayoutException) { continue; }
+            try { fields = reader.Runtime.DeclaredFields(k); }
+            catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { continue; }
             foreach (var field in fields)
             {
                 if (field.IsStatic || field.IsLiteral) continue;
-                if (field.Kind is not (Il2CppTypeKind.Class or Il2CppTypeKind.GenericInstance)) continue;
+                if (field.Kind is not (Il2CppTypeKind.Class or Il2CppTypeKind.GenericInstance or Il2CppTypeKind.SzArray)) continue;
                 ulong child;
                 try { child = reader.Memory.ReadPointer(obj + (ulong)field.Offset); }
                 catch (MemoryReadException) { continue; }
-                if (child == 0) continue;
-                Walk(child, $"{path}.{field.Name}", depth + 1, maxDepth, buttonClass, found, visited);
+                if (child == 0 || !MemoryExtensions.IsPlausiblePointer(child)) continue;
+                string childPath = $"{path}.{field.Name}";
+
+                // Transparently walk List<T> of reference types and arrays of reference types so UI tiles
+                // stored in them are reachable. Field.Kind tells us the container shape; we rely on
+                // Walk's own plausibility checks to reject value-type payloads that leak through.
+                if (field.Kind == Il2CppTypeKind.GenericInstance)
+                {
+                    ulong childClassPtr;
+                    try { childClassPtr = reader.ClassOf(child); } catch (MemoryReadException) { continue; }
+                    if (SafeName(childClassPtr).StartsWith("System.Collections.Generic.List"))
+                    {
+                        TryWalkContainer(() => reader.ListItems(child), childPath, depth, maxDepth, buttonClass, found, visited);
+                        continue;
+                    }
+                }
+                else if (field.Kind == Il2CppTypeKind.SzArray)
+                {
+                    TryWalkContainer(() => reader.ArrayItems(child), childPath, depth, maxDepth, buttonClass, found, visited);
+                    continue;
+                }
+                Walk(child, childPath, depth + 1, maxDepth, buttonClass, found, visited);
             }
         }
     }
@@ -97,6 +133,16 @@ public sealed class ButtonFinder(ManagedReader reader)
     {
         try { return reader.Runtime.QualifiedClassName(klass); }
         catch { return ""; }
+    }
+
+    private void TryWalkContainer(Func<IReadOnlyList<ulong>> enumerate, string path,
+        int depth, int maxDepth, ulong buttonClass, List<FoundButton> found, HashSet<ulong> visited)
+    {
+        IReadOnlyList<ulong> items;
+        try { items = enumerate(); }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { return; }
+        for (int i = 0; i < items.Count; i++)
+            Walk(items[i], $"{path}[{i}]", depth + 1, maxDepth, buttonClass, found, visited);
     }
 
     // Strip the auto-property angle brackets from "<Foo>k__BackingField" for readability.

@@ -104,6 +104,13 @@ Work through these in order, one at a time. Each item says how we know it is don
    `WH_GETMESSAGE` hook (no code patching). Live: tapped `DetailButton` on turn 28, Umamusume Details
    panel opened as if the user had tapped it, game and reader unaffected afterwards, `agent unload`
    removed the hook and module cleanly.
+   Step 4b: ButtonFinder walks List<T> and reference arrays too, with defensive catches so a bogus
+   pointer in one field doesn't abort the whole walk (parent chain capped at 10, child reads guarded).
+   Buttons command no longer calls full Snapshot() (which can race during screen transitions).
+   Live on turn 28 training menu: found all 5 training tiles at `View.TrainingFooter._items[0..4]._button`
+   and the 5 partner-card icons at `View.TrainingHorse._iconArray[0..4]._myButton`. Back/Skip/Quick
+   buttons live deeper than depth 5 or outside the walked roots; to be found when needed.
+
    Step 4a done (open/close dialog cycles end-to-end):
    - `SingletonInstance` now checks the class itself (not just its parents), so DialogManager resolves.
    - `ButtonFinder` also walks `DialogManager._dialogList`; dialog buttons appear as `Dialog[i]...`.

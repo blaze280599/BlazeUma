@@ -33,8 +33,10 @@ internal static class ButtonsCommand
         {
             using var reader = GameReader.Open(pid, metadata);
             var buttons = new ButtonFinder(reader.ManagedReader).FromCurrentScene();
-            var screen = reader.Snapshot().Screen;
-            Console.WriteLine($"Screen: {screen?.ViewController ?? "?"}");
+            // Read the current view name directly — the full Snapshot() can race with mid-animation state.
+            ulong scene = reader.ManagedReader.SingletonInstance("Gallop.SceneManager");
+            string view = scene == 0 ? "?" : (reader.ManagedReader.ClassName(reader.ManagedReader.Ptr(scene, "_currentViewController")) ?? "?");
+            Console.WriteLine($"Screen: {view}");
             int shown = 0;
             foreach (var b in buttons.OrderByDescending(b => b.CanTap).ThenBy(b => b.Path))
             {
