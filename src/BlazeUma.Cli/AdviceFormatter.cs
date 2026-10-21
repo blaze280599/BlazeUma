@@ -31,7 +31,7 @@ internal sealed class AdviceFormatter(bool verbose, bool color, int width)
     public string Footer(string text) => Dim(" " + Fit(text, 1));
 
     /// <summary>A status panel for when there is no advice: game not running, no career, unreadable state.</summary>
-    public string Status(string title, string detail, bool problem = false, bool watching = true)
+    public string Status(string title, string detail, bool problem = false, string? hint = null)
     {
         string rule = new('─', Math.Min(width, 90));
         string heading = " ● " + title;
@@ -42,7 +42,7 @@ internal sealed class AdviceFormatter(bool verbose, bool color, int width)
             "   " + Fit(detail, 3),
             Dim(rule),
         };
-        if (watching) lines.Add(Dim($" {DateTime.Now:HH:mm:ss}  Ctrl+C to quit"));
+        if (hint is not null) lines.Add(Dim($" {DateTime.Now:HH:mm:ss}  {hint}"));
         return string.Join(Environment.NewLine, lines);
     }
 

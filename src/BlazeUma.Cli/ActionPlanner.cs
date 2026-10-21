@@ -181,7 +181,8 @@ internal static class ActionPlanner
         }, WaitFor.EventDone),
     ], IsEvent: true);
 
-    private static string? DialogTitle(ManagedReader r)
+    /// <summary>Title of the topmost dialog, or null.</summary>
+    public static string? DialogTitle(ManagedReader r)
     {
         ulong manager = r.SingletonInstance("Gallop.DialogManager");
         var dialogs = manager == 0 ? [] : r.ListItems(r.Ptr(manager, "_dialogList"));

@@ -8,9 +8,9 @@ namespace BlazeUma.Cli;
 
 /// <summary>
 /// Drives the screens after race entry (confirm, paddock, race, results, goal popups, new month) until the
-/// home screen is back on a later turn. Screens and buttons come from a hand-played race traced with
-/// <c>buttons --watch</c>. Each poll picks the first rule whose button is on screen: enabled, interactable
-/// and active in the hierarchy (hidden layouts keep enabled buttons, so the agent checks activeness).
+/// home screen is back on a later turn. Screens and buttons come from a hand-played race, traced screen by
+/// screen. Each poll picks the first rule whose button is on screen: enabled, interactable and active in the
+/// hierarchy (hidden layouts keep enabled buttons, so the agent checks activeness).
 /// </summary>
 internal static class RaceRunner
 {
@@ -81,7 +81,7 @@ internal static class RaceRunner
                 screen = ScreenName(r);
                 var buttons = new ButtonFinder(r, includeDialogTemplates: true).FromCurrentScene();
                 bool dialogOpen = buttons.Any(b => b.Path.StartsWith("Dialog[") && b.CanTap);
-                // A post-race event with choices: the caller answers it (auto run's event plan).
+                // A post-race event with choices: the caller answers it (the auto bot's event plan).
                 if (screen == Home && EventWithChoices(r))
                 {
                     Console.WriteLine("   An event with choices is showing; handing over to answer it.");
@@ -117,8 +117,7 @@ internal static class RaceRunner
             {
                 var limit = screen == "Gallop.RaceMainViewController" ? RaceStall : Stall;
                 if (stall.Elapsed < limit) continue;
-                Console.WriteLine($"   Nothing to tap on {screen} for {limit.TotalSeconds:0} s; this screen is not mapped yet. Continue by hand " +
-                                  "(`buttons --watch` records it so it can be added).");
+                Console.WriteLine($"   Nothing to tap on {screen} for {limit.TotalSeconds:0} s; this screen is not mapped yet. Continue by hand.");
                 return 1;
             }
 

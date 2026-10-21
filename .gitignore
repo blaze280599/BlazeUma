@@ -10,3 +10,4 @@ __pycache__/
 dumps/
 logs/
 agent/build/
+publish/

@@ -3,9 +3,9 @@
 Career helper for Umamusume: Pretty Derby (Steam). It reads game state from memory
 (read-only) and will drive a URA Finale career in advisor → supervised → auto modes.
 
-Status: the memory layer, the game-data layer and an advisor (recommendations only)
-work against the live game. Supervised automation (`auto run`) taps through trainings, events and races
-through an in-game agent; there is no UI yet.
+Status: the memory layer, the game-data layer and the advisor work against the live game. The auto bot
+plays trainings, rest, recreation, infirmary, events and races through an in-game agent, and pauses to ask
+when it meets a screen or popup it does not handle yet.
 
 ## Layout
 
@@ -15,24 +15,31 @@ through an in-game agent; there is no UI yet.
 | `src/BlazeUma.Data` | Game data from the client's `master.mdb` (SQLite): calendar, goals, races, skills, cards, text |
 | `src/BlazeUma.Advisor` | Decision engine: targets, value model, turn / event / race / skill advice |
 | `src/BlazeUma.Automation` | Injects the in-game agent and talks to it over a named pipe |
-| `src/BlazeUma.Cli` | Snapshot JSON, `--advise`, and the `agent` / `buttons` / `inspect` / `auto` commands |
+| `src/BlazeUma.Cli` | `BlazeUma.exe`: the interactive console app (main menu, Advisor, Auto bot) |
 | `agent/` | C++ DLL loaded into the game; runs taps and calls on Unity's main thread |
 | `tests/` | Decoder, layout, data and advisor tests |
 | `research/` | Verified findings and the Python scripts used to find them |
 
 ## Run
 
-Requires the .NET 10 SDK, Windows x64, and the game running.
+Requires Windows x64 and the game running. Build the agent first (see below), then:
 
 ```powershell
-dotnet build BlazeUma.slnx
-dotnet run --project src/BlazeUma.Cli                 # one snapshot
-dotnet run --project src/BlazeUma.Cli -- --watch 1    # one JSON line per second
-dotnet run --project src/BlazeUma.Cli -- --advise --watch 1   # live advice, redrawn when it changes;
-                                                               # waits for the game and reconnects after restarts
-dotnet run --project src/BlazeUma.Cli -- --advise --verbose    # reasons for every option + stat weights
+dotnet publish src/BlazeUma.Cli -c Release    # publish/BlazeUma.exe (self-contained) + BlazeUma.Agent.dll
+.\publish\BlazeUma.exe                        # or double-click it
 dotnet test BlazeUma.slnx
 ```
+
+The app takes no command-line arguments. It opens on a main menu:
+
+1. **Advisor**: you play; BlazeUma reads the game once a second and shows the recommended action.
+   It waits for the game and reconnects after restarts. Esc goes back to the menu, V shows the reasons for
+   every option and the stat weights.
+2. **Auto bot**: BlazeUma plays the career. **Insert** pauses, **Page Down** stops; both work while the game
+   has focus and take effect at the next safe point (before the next action, or the next tap in a race).
+   Paused, you can resume or stop; stopped, you can start again, switch to Advisor, go to the main menu or exit.
+   A screen the bot does not handle yet, or a popup with a real choice (the Rest confirmation), pauses it and
+   says what is needed; you can play by hand meanwhile and resume from any screen.
 
 ## How the advisor decides
 
@@ -55,8 +62,7 @@ All constants are heuristics in `ValueModel` and the advisors, meant to be tuned
 
 ## Turn log
 
-`--advise --watch` appends to `logs/career-<cardId>-<time>.jsonl` (change with `--log DIR`, disable
-with `--no-log`). Each completed turn writes a `turn` record: the start-of-turn snapshot, the advice,
+Advisor mode appends to `logs/career-<cardId>-<time>.jsonl` next to the exe. Each completed turn writes a `turn` record: the start-of-turn snapshot, the advice,
 and the measured outcome at the start of the next turn (stat/energy/mood/SP/fan/bond changes,
 conditions, skills learned, and a best-guess action such as `training:101`, `outing:9008`, `race`,
 `rest`). Each event shown writes an `event` record. The log is what the estimates get tuned from.
@@ -70,29 +76,15 @@ stays read-only; the injector is the only part that opens the game with write ac
 ```powershell
 & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -S agent -B agent/build -G "Visual Studio 18 2026" -A x64
 & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build agent/build --config Release
-dotnet run --project src/BlazeUma.Cli -- agent inject    # load + ping
-dotnet run --project src/BlazeUma.Cli -- agent ping
-dotnet run --project src/BlazeUma.Cli -- agent unload    # agent removes itself
-
-dotnet run --project src/BlazeUma.Cli -- buttons         # list tappable buttons on the current screen
-dotnet run --project src/BlazeUma.Cli -- buttons --all   # include non-tappable
-dotnet run --project src/BlazeUma.Cli -- buttons --active  # only buttons really on screen (agent checks the GameObject)
-dotnet run --project src/BlazeUma.Cli -- buttons --watch 0.5   # trace screen changes to logs/trace-*.txt
-dotnet run --project src/BlazeUma.Cli -- agent tap 0x<addr>   # invoke a button's click on Unity's main thread
-dotnet run --project src/BlazeUma.Cli -- agent tap-path Details   # tap by field-path substring (aliases: Rest, Training, Close, Back, …)
-
-dotnet run --project src/BlazeUma.Cli -- auto plan                 # taps the advisor's pick would need (dry run)
-dotnet run --project src/BlazeUma.Cli -- auto run                  # supervised: Enter confirms each tap, q stops, a = rest of the action unasked
-dotnet run --project src/BlazeUma.Cli -- auto run --action "Train Wit"   # a specific action instead of the advisor's pick
-dotnet run --project src/BlazeUma.Cli -- auto run --action "Race: Mile Cup"   # optional race; race day runs the goal race
 ```
 
-Events with choices: `auto run` closes the reward preview and takes the advisor's choice.
+`dotnet publish` copies the built agent next to the exe; the auto bot injects it when it starts.
+Events with choices: the bot closes the reward preview and takes the advisor's choice.
 Races run end to end: entry confirmation, View Results, the result scenes, goal popups and the new-month
-screen, until home on the next turn. An unmapped screen stops the run and hands back to you.
+screen, until home on the next turn.
 
-The game loads the agent from a copy in `agent/build/Release/loaded/<hash>/`, so the agent can be rebuilt
-while the game runs; `auto run` swaps an older loaded agent for the current one. (The game refuses DLLs
+The game loads the agent from a copy in `loaded/<hash>/` beside the DLL, so the agent can be rebuilt
+while the game runs; the auto bot swaps an older loaded agent for the current one. (The game refuses DLLs
 from `%LOCALAPPDATA%`.)
 
 ## How the reader finds things
