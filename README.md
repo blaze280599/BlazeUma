@@ -73,6 +73,7 @@ dotnet run --project src/BlazeUma.Cli -- agent unload    # agent removes itself
 
 dotnet run --project src/BlazeUma.Cli -- buttons         # list tappable buttons on the current screen
 dotnet run --project src/BlazeUma.Cli -- buttons --all   # include non-tappable
+dotnet run --project src/BlazeUma.Cli -- agent tap 0x<addr>   # invoke a button's click on Unity's main thread
 ```
 
 ## How the reader finds things

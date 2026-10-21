@@ -98,6 +98,14 @@ Work through these in order, one at a time. Each item says how we know it is don
    enable/interactable. Turn 28 live: all 5 home command buttons found by name (`_trainingButton`,
    `_outingButton`, `_raceRegistButton`, `_skillGetButton`, `_nextMonthButton`=Rest), with
    `_hospitalButton` correctly non-interactable.
+   Step 3 done (first in-game action from BlazeUma): `BlazeUma.Cli agent tap <addr>` resolves the
+   button's `m_OnClick` UnityEvent and `UnityEngine.Events.UnityEvent.Invoke`'s native function +
+   MethodInfo, then asks the agent to call `fn(event_obj, mi)` on Unity's main thread via a
+   `WH_GETMESSAGE` hook (no code patching). Live: tapped `DetailButton` on turn 28, Umamusume Details
+   panel opened as if the user had tapped it, game and reader unaffected afterwards, `agent unload`
+   removed the hook and module cleanly.
+   Known gap for step 4: ButtonFinder only walks SceneManager views; dialog overlays like the Details
+   popup's Close button live in `DialogManager._dialogList` and need a separate walk.
 9. [ ] **Supervised mode**: the bot performs the pick after you press a key; stops on anything unexpected.
 10. [ ] **Auto mode**: full career loop from turn 1 to the results screen, with a stop hotkey.
 

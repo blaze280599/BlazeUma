@@ -184,16 +184,31 @@ public sealed class Il2CppRuntime
         FindField(klass, name) ?? throw new UnsupportedLayoutException($"Field {name} not found on {QualifiedClassName(klass)}.");
 
     /// <summary>Native code addresses of every declared overload with this name.</summary>
-    public IEnumerable<ulong> MethodPointers(ulong klass, string methodName)
+    public IEnumerable<ulong> MethodPointers(ulong klass, string methodName) =>
+        MethodInfos(klass, methodName).Select(mi => _memory.ReadPointer(mi));
+
+    /// <summary>MethodInfo pointers for every declared overload with this name (own class and inherited).</summary>
+    public IEnumerable<ulong> MethodInfos(ulong klass, string methodName)
     {
-        ulong methods = _memory.ReadPointer(klass + ClassMethods);
-        ushort count = _memory.ReadUInt16(klass + ClassMethodCount);
-        if (methods == 0 || count is 0 or > 4096) yield break;
-        for (int i = 0; i < count; i++)
+        for (ulong k = klass; k != 0; k = Parent(k))
         {
-            ulong method = _memory.ReadPointer(methods + (ulong)(i * 8));
-            if (_memory.ReadCString(_memory.ReadPointer(method + 0x18)) == methodName)
-                yield return _memory.ReadPointer(method);
+            ulong methods = _memory.ReadPointer(k + ClassMethods);
+            ushort count = _memory.ReadUInt16(k + ClassMethodCount);
+            if (methods == 0 || count is 0 or > 4096) continue;
+            for (int i = 0; i < count; i++)
+            {
+                ulong method = _memory.ReadPointer(methods + (ulong)(i * 8));
+                if (_memory.ReadCString(_memory.ReadPointer(method + 0x18)) == methodName)
+                    yield return method;
+            }
         }
+    }
+
+    /// <summary>Single MethodInfo and function pointer for a method known to be present.</summary>
+    public (ulong MethodInfo, ulong Function) RequireMethod(ulong klass, string methodName)
+    {
+        ulong mi = MethodInfos(klass, methodName).FirstOrDefault();
+        if (mi == 0) throw new UnsupportedLayoutException($"Method {methodName} not found on {QualifiedClassName(klass)}.");
+        return (mi, _memory.ReadPointer(mi));
     }
 }

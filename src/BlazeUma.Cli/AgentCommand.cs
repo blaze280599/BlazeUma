@@ -1,29 +1,38 @@
 using BlazeUma.Automation;
+using BlazeUma.Memory;
+using BlazeUma.Memory.Game;
+using BlazeUma.Memory.Il2Cpp;
 using BlazeUma.Memory.Native;
 
 namespace BlazeUma.Cli;
 
 /// <summary>
-/// BlazeUma.Cli agent inject|ping|unload [--pid N] [--dll PATH]
-/// inject: load the agent into the game (no effect if already loaded). ping: check it answers.
-/// unload: ask the agent to remove itself.
+/// BlazeUma.Cli agent inject|ping|unload|tap [--pid N] [--dll PATH]
+/// inject: load the agent into the game (no effect if already loaded).
+/// ping: check it answers. unload: ask the agent to remove itself.
+/// tap &lt;button_addr&gt;: resolve the button's m_OnClick UnityEvent and ask the agent to invoke it on
+/// Unity's main thread (same effect as the user tapping that button).
 /// </summary>
 internal static class AgentCommand
 {
-    public const string Usage = "usage: BlazeUma.Cli agent inject|ping|unload [--pid N] [--dll PATH]";
+    public const string Usage = "usage: BlazeUma.Cli agent inject|ping|unload|tap <addr> [--pid N] [--dll PATH]";
 
     public static int Run(string[] args)
     {
         if (args.Length == 0) { Console.Error.WriteLine(Usage); return 2; }
         int? pid = null;
         string? dll = null;
+        string? tapArg = null;
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "--pid": pid = int.Parse(args[++i]); break;
                 case "--dll": dll = args[++i]; break;
-                default: Console.Error.WriteLine(Usage); return 2;
+                default:
+                    if (args[0] == "tap" && tapArg is null) tapArg = args[i];
+                    else { Console.Error.WriteLine(Usage); return 2; }
+                    break;
             }
         }
 
@@ -46,10 +55,42 @@ internal static class AgentCommand
             case "unload":
                 Console.WriteLine(Ask(target, "quit"));
                 return 0;
+            case "tap":
+                if (tapArg is null) { Console.Error.WriteLine("tap needs a button address (hex); run `BlazeUma.Cli buttons` to see them."); return 2; }
+                return Tap(pid, tapArg);
             default:
                 Console.Error.WriteLine(Usage);
                 return 2;
         }
+    }
+
+    /// <summary>Resolves UnityEvent.Invoke once per CLI invocation; the agent takes care of main-thread work.</summary>
+    private static int Tap(int? pid, string addrText)
+    {
+        ulong buttonAddr = Convert.ToUInt64(addrText.StartsWith("0x") ? addrText[2..] : addrText, 16);
+
+        using var reader = GameReader.Open(pid);
+        var r = reader.ManagedReader;
+        ulong buttonClass = r.Runtime.GetClass(ButtonFinder.ButtonClass);
+        if (buttonClass == 0) throw new InvalidOperationException("Gallop.ButtonCommon is not initialised yet.");
+
+        // m_OnClick lives on UnityEngine.UI.Button, a parent of ButtonCommon; find its offset via the field table.
+        var onClick = r.Runtime.FindField(buttonClass, "m_OnClick")
+            ?? throw new InvalidOperationException("m_OnClick field not found on this button's class chain.");
+        ulong eventObj = r.Memory.ReadPointer(buttonAddr + (ulong)onClick.Field.Offset);
+        if (eventObj == 0) return Fail("button has no m_OnClick instance; it has no handlers assigned");
+
+        // Invoke lives on UnityEngine.Events.UnityEvent (the parameterless, public virtual Invoke).
+        ulong unityEventClass = r.Runtime.GetClass("UnityEngine.Events.UnityEvent");
+        if (unityEventClass == 0) return Fail("UnityEngine.Events.UnityEvent not initialised yet.");
+        var (methodInfo, fnPtr) = r.Runtime.RequireMethod(unityEventClass, "Invoke");
+
+        using var agent = AgentClient.Connect(reader.ProcessId);
+        string reply = agent.Send($"tap {eventObj:x} {fnPtr:x} {methodInfo:x}");
+        Console.WriteLine(reply);
+        return reply.StartsWith("ok") ? 0 : 1;
+
+        static int Fail(string message) { Console.Error.WriteLine(message); return 1; }
     }
 
     private static string Ask(int pid, string command)
