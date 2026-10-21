@@ -3,16 +3,18 @@
 Career helper for Umamusume: Pretty Derby (Steam). It reads game state from memory
 (read-only) and will drive a URA Finale career in advisor → supervised → auto modes.
 
-Status: the memory layer and a snapshot CLI work against the live game. The decision
-engine, game-data (master.mdb) layer, input automation and UI are not built yet.
+Status: the memory layer, the game-data layer and an advisor (recommendations only)
+work against the live game. Input automation and a UI are not built yet.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
 | `src/BlazeUma.Memory` | Read-only game access: Win32 reads, IL2CPP metadata/runtime, ACTk Obscured decoders, career snapshot |
-| `src/BlazeUma.Cli` | Prints a live `CareerSnapshot` as JSON |
-| `tests/BlazeUma.Memory.Tests` | Decoder and collection-layout tests (real captured bytes) |
+| `src/BlazeUma.Data` | Game data from the client's `master.mdb` (SQLite): calendar, goals, races, skills, cards, text |
+| `src/BlazeUma.Advisor` | Decision engine: targets, value model, turn / event / race / skill advice |
+| `src/BlazeUma.Cli` | Prints a live `CareerSnapshot` as JSON, or advice with `--advise` |
+| `tests/` | Decoder, layout, data and advisor tests |
 | `research/` | Verified findings and the Python scripts used to find them |
 
 ## Run
@@ -23,8 +25,28 @@ Requires the .NET 10 SDK, Windows x64, and the game running.
 dotnet build BlazeUma.slnx
 dotnet run --project src/BlazeUma.Cli                 # one snapshot
 dotnet run --project src/BlazeUma.Cli -- --watch 1    # one JSON line per second
+dotnet run --project src/BlazeUma.Cli -- --advise --watch 1   # advice, reprinted when it changes
 dotnet test BlazeUma.slnx
 ```
+
+## How the advisor decides
+
+`CareerAdvisor` looks at the current screen and answers for it:
+
+- **Training turn**: every enabled action is scored in one unit ("one early Speed point"):
+  stat gains × per-stat weight, skill points, bond/hint value of partners, the energy
+  change (energy is worth more the lower it is), and failure risk
+  (`fail% × (gains + failure loss)`). Rest, recreation (mood), infirmary (bad conditions)
+  and the best predicted optional race are scored on the same scale.
+- **Targets**: derived from the remaining goals. Stamina follows the longest goal
+  distance; stat weights shrink as a stat approaches its target and drop to zero at the cap.
+- **Events**: expected value over the game's own choice previews. Known trainee events use
+  measured odds; others weight outcomes equally.
+- **Races**: aptitude must be B or better; fan shortfall for the next goal dominates.
+- **Skills**: rating × fit (goal distances, running style, surface) ÷ price; skill points
+  are saved until a goal race is today or next turn.
+
+All constants are heuristics in `ValueModel` and the advisors, meant to be tuned.
 
 ## How the reader finds things
 

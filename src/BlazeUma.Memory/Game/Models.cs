@@ -51,7 +51,7 @@ public sealed record AcquiredSkill(int SkillId, int Level);
 public sealed record SkillHint(int GroupId, int Rarity, int Level);
 
 public sealed record Character(
-    int CardId, int ScenarioId, int RouteId,
+    int CardId, int ScenarioId, int RouteId, int TalentLevel,
     Stats Stats, Stats MaxStats,
     int Energy, int MaxEnergy, Mood Mood, int SkillPoints, int Fans,
     int RunningStyle, Aptitudes Aptitudes,
@@ -91,6 +91,7 @@ public sealed record CareerSnapshot(
     bool CareerActive,
     int? Turn,
     int? AlarmClocks,
+    int? LastTrainingId,
     Character? Character,
     IReadOnlyList<Command>? Commands,
     StoryEvent? Story,

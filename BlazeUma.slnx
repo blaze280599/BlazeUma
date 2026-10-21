@@ -1,9 +1,12 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/BlazeUma.Advisor/BlazeUma.Advisor.csproj" />
     <Project Path="src/BlazeUma.Cli/BlazeUma.Cli.csproj" />
+    <Project Path="src/BlazeUma.Data/BlazeUma.Data.csproj" />
     <Project Path="src/BlazeUma.Memory/BlazeUma.Memory.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/BlazeUma.Advisor.Tests/BlazeUma.Advisor.Tests.csproj" />
     <Project Path="tests/BlazeUma.Memory.Tests/BlazeUma.Memory.Tests.csproj" />
   </Folder>
 </Solution>

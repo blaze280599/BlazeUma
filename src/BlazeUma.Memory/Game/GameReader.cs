@@ -18,6 +18,9 @@ public sealed class GameReader : IDisposable
     public Il2CppRuntime Runtime { get; }
     public int ProcessId => _process.ProcessId;
 
+    /// <summary>Install directory of the running game (contains GameAssembly.dll).</summary>
+    public string GameDirectory => Path.GetDirectoryName(_process.GameAssemblyPath)!;
+
     private GameReader(GameProcess process, Il2CppRuntime runtime, ManagedReader reader)
     {
         _process = process;
@@ -97,6 +100,7 @@ public sealed class GameReader : IDisposable
             CareerActive: active,
             Turn: turn,
             AlarmClocks: home != 0 ? _r.ObscuredInt(home, "_availableContinueNum") : null,
+            LastTrainingId: active ? _r.ObscuredInt(sm, "SelectedTrainingCommandId") : null,
             Character: active ? Section("character", () => ReadCharacter(_r.Ptr(sm, "Character"))) : null,
             Commands: home != 0 ? Section("commands", () => ReadCommands(home)) : null,
             Story: active ? Section("story", ReadStory) : null,
@@ -126,7 +130,7 @@ public sealed class GameReader : IDisposable
     {
         int O(string field) => _r.ObscuredInt(ch, field);
         return new Character(
-            CardId: O("_cardId"), ScenarioId: O("_scenarioId"), RouteId: O("_routeId"),
+            CardId: O("_cardId"), ScenarioId: O("_scenarioId"), RouteId: O("_routeId"), TalentLevel: O("TalentLevel"),
             Stats: new Stats(O("_speed"), O("_stamina"), O("_power"), O("_guts"), O("_wiz")),
             MaxStats: new Stats(O("MaxSpeed"), O("MaxStamina"), O("MaxPower"), O("MaxGuts"), O("MaxWiz")),
             Energy: O("_hp"), MaxEnergy: O("_maxHp"),

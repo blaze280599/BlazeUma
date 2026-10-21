@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BlazeUma.Memory\BlazeUma.Memory.csproj" />
+    <ProjectReference Include="..\BlazeUma.Data\BlazeUma.Data.csproj" />
+    <ProjectReference Include="..\BlazeUma.Advisor\BlazeUma.Advisor.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
