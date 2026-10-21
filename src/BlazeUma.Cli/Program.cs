@@ -1,19 +1,20 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using BlazeUma.Advisor;
+using BlazeUma.Cli;
 using BlazeUma.Data;
 using BlazeUma.Memory;
 using BlazeUma.Memory.Game;
 using BlazeUma.Memory.Il2Cpp;
 
-// BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise]
+// BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]]
 // Prints a read-only career snapshot as JSON, or with --advise the recommended action.
-// With --watch, repeats until Ctrl+C (snapshots one JSON per line; advice only when it changes).
+// With --watch, repeats until Ctrl+C (snapshots one JSON per line; advice redrawn when it changes).
 
 int? pid = null;
 string? metadata = null, master = null;
 double? watch = null;
-bool advise = false;
+bool advise = false, verbose = false;
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -23,8 +24,9 @@ for (int i = 0; i < args.Length; i++)
         case "--master": master = args[++i]; break;
         case "--watch": watch = double.Parse(args[++i]); break;
         case "--advise": advise = true; break;
+        case "--verbose": verbose = true; break;
         default:
-            Console.Error.WriteLine("usage: BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise]");
+            Console.Error.WriteLine("usage: BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]]");
             return 2;
     }
 }
@@ -45,7 +47,10 @@ try
     using var reader = GameReader.Open(pid, metadata);
     using var data = advise ? MasterDatabase.Open(master ?? MasterDatabase.PathInGameDirectory(reader.GameDirectory)) : null;
     var advisor = data is null ? null : new CareerAdvisor(data);
-    string? lastAdvice = null;
+    var formatter = AdviceFormatter.ForConsole(verbose);
+    bool redraw = watch is not null && !Console.IsOutputRedirected;
+    Console.OutputEncoding = System.Text.Encoding.UTF8;
+    Advice? lastAdvice = null;
     do
     {
         try
@@ -57,9 +62,13 @@ try
             }
             else
             {
-                string text = Format(advisor.Advise(snapshot));
-                if (text != lastAdvice) Console.WriteLine(text);
-                lastAdvice = text;
+                var current = advisor.Advise(snapshot);
+                if (lastAdvice is null || !SameAdvice(current, lastAdvice))
+                {
+                    if (redraw) Console.Clear();
+                    Console.WriteLine(formatter.Format(current, snapshot.ReadAt));
+                }
+                lastAdvice = current;
             }
         }
         catch (Exception e) when (watch is not null && e is MemoryReadException or InconsistentSnapshotException)
@@ -80,10 +89,7 @@ catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException
     return 1;
 }
 
-static string Format(Advice advice)
-{
-    var lines = new List<string> { $"== {advice.Summary}" };
-    lines.AddRange(advice.Options.Take(8).Select((o, i) => $"  {(i == 0 ? ">" : " ")} {o.Label,-32} {o.Score,7:0.0}   {string.Join("; ", o.Reasons)}"));
-    lines.AddRange(advice.Notes.Select(n => $"  - {n}"));
-    return string.Join(Environment.NewLine, lines);
-}
+static bool SameAdvice(Advice a, Advice b) =>
+    a.Header == b.Header && a.Summary == b.Summary
+    && a.Options.Select(o => o.ToString()).SequenceEqual(b.Options.Select(o => o.ToString()))
+    && a.Notes.SequenceEqual(b.Notes);

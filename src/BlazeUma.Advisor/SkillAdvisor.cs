@@ -88,9 +88,7 @@ public sealed class SkillAdvisor(CareerContext ctx)
         bool goalSoon = ctx.NextGoal is { } g && g.Turn - ctx.Turn <= 1;
         bool ending = ctx.TurnsLeft <= 1;
         if (!goalSoon && !ending)
-            return ([], ctx.NextGoal is { } next
-                ? $"save skill points: next goal {next.Name} is in {next.Turn - ctx.Turn} turns and hints will make skills cheaper"
-                : "save skill points");
+            return ([], "save points until the turn before a goal race (hints make skills cheaper)");
 
         var buy = new List<Candidate>();
         int left = skillPoints;

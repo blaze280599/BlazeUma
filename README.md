@@ -25,7 +25,8 @@ Requires the .NET 10 SDK, Windows x64, and the game running.
 dotnet build BlazeUma.slnx
 dotnet run --project src/BlazeUma.Cli                 # one snapshot
 dotnet run --project src/BlazeUma.Cli -- --watch 1    # one JSON line per second
-dotnet run --project src/BlazeUma.Cli -- --advise --watch 1   # advice, reprinted when it changes
+dotnet run --project src/BlazeUma.Cli -- --advise --watch 1   # live advice, redrawn when it changes
+dotnet run --project src/BlazeUma.Cli -- --advise --verbose    # reasons for every option + stat weights
 dotnet test BlazeUma.slnx
 ```
 

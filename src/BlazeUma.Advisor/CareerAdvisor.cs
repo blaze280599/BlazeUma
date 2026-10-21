@@ -11,64 +11,71 @@ public sealed class CareerAdvisor(IGameData data)
 
     public Advice Advise(CareerSnapshot snapshot)
     {
+        var warnings = snapshot.Errors.Select(e => new Note("Read error", e)).ToList();
         if (!snapshot.CareerActive || snapshot.Character is null || snapshot.Turn is null)
-            return new Advice(Situation.NoCareer, "No career in progress.", [], snapshot.Errors);
+            return new Advice(Situation.NoCareer, "No career", "No career in progress.", [], warnings, []);
 
         var ctx = new CareerContext(snapshot, data);
         var values = new ValueModel(ctx);
-        var notes = new List<string>(snapshot.Errors.Select(e => $"read error: {e}"));
-        notes.Add(TargetsNote(ctx, values));
+        var c = ctx.Character;
+        string header = $"Turn {ctx.Turn} · {ctx.Date} · Mood {c.Mood} · Energy {c.Energy}/{c.MaxEnergy} · SP {c.SkillPoints} · Fans {c.Fans}";
+        var t = values.Targets.Target;
+        var w = values.Targets.Weights;
+        var notes = new List<Note>(warnings)
+        {
+            new("Targets", $"Spd {t.Speed}  Sta {t.Stamina}  Pow {t.Power}  Gut {t.Guts}  Wit {t.Wit}"),
+        };
+        if (ctx.NextGoal is { } next)
+            notes.Add(new Note("Next goal", $"{next.Name} on turn {next.Turn}" +
+                (next.Turn > ctx.Turn ? $" (in {next.Turn - ctx.Turn})" : " (today)") +
+                (next.RequiredPlace > 0 ? $", need top {next.RequiredPlace}" : "")));
+        if (ctx.FanShortfall() is var (fanGoal, shortfall))
+            notes.Add(new Note("Fans", $"{shortfall} more needed to enter {fanGoal.Name}"));
+        var details = new List<string>
+        {
+            $"stat weights Spd {w[ParamIds.Speed]:0.00}  Sta {w[ParamIds.Stamina]:0.00}  Pow {w[ParamIds.Power]:0.00}  Gut {w[ParamIds.Guts]:0.00}  Wit {w[ParamIds.Wit]:0.00}",
+        };
 
         if (snapshot.Screen?.ViewController == SkillScreen && snapshot.SkillShop is { } shop)
-            return SkillShopAdvice(ctx, shop, notes);
+            return SkillShopAdvice(ctx, header, shop, notes, details);
         if (snapshot.Screen?.ViewController == RaceScreen && snapshot.RaceList is { } races)
-            return RaceListAdvice(ctx, values, races, notes);
+            return RaceListAdvice(ctx, values, header, races, notes, details);
         if (snapshot.Story is { LooksActive: true } story && snapshot.EventChoices is { Count: > 0 } choices)
         {
             var ranked = new EventAdvisor(ctx, values).Rank(choices, story);
             string title = data.StoryTitle(story.StoryId) ?? $"story {story.StoryId}";
-            return new Advice(Situation.Event, $"{title}: pick {ranked[0].Label.ToLowerInvariant()}", ranked, notes);
+            return new Advice(Situation.Event, header, $"Event \"{title}\": {ranked[0].Label}", ranked, notes, details);
         }
 
         var skills = new SkillAdvisor(ctx);
-        var (buy, why) = skills.Plan(skills.Predicted(), ctx.Character.SkillPoints);
+        var (buy, why) = skills.Plan(skills.Predicted(), c.SkillPoints);
         notes.Add(buy.Count > 0
-            ? $"before racing, buy: {string.Join(", ", buy.Select(b => $"{b.Skill.Name} ({b.Price})"))} ({why})"
-            : $"skills: {why}");
+            ? new Note("Skills", $"buy {string.Join(", ", buy.Select(b => $"{b.Skill.Name} ({b.Price})"))} before racing ({why})")
+            : new Note("Skills", why));
 
         if (ctx.GoalToday is { } goal)
-            return new Advice(Situation.GoalRaceDay, $"Race day: run {goal.Name} (goal{(goal.RequiredPlace > 0 ? $", need top {goal.RequiredPlace}" : "")}).", [], notes);
+            return new Advice(Situation.GoalRaceDay, header,
+                $"Race day: run {goal.Name}{(goal.RequiredPlace > 0 ? $" (need top {goal.RequiredPlace})" : "")}", [], notes, details);
 
         var options = new TurnAdvisor(ctx, values).Rank();
-        string summary = options.Count > 0 ? $"Turn {ctx.Turn} ({ctx.Date}): {options[0].Label}" : "No enabled actions found.";
-        return new Advice(Situation.TrainingTurn, summary, options, notes);
+        return new Advice(Situation.TrainingTurn, header, options.Count > 0 ? options[0].Label : "No enabled actions found", options, notes, details);
     }
 
-    private static string TargetsNote(CareerContext ctx, ValueModel values)
-    {
-        var t = values.Targets.Target;
-        var w = values.Targets.Weights;
-        string next = ctx.NextGoal is { } g ? $"; next goal {g.Name} on turn {g.Turn}" : "";
-        return $"targets Spd {t.Speed} Sta {t.Stamina} Pow {t.Power} Gut {t.Guts} Wit {t.Wit} " +
-               $"(weights {w[ParamIds.Speed]:0.00}/{w[ParamIds.Stamina]:0.00}/{w[ParamIds.Power]:0.00}/{w[ParamIds.Guts]:0.00}/{w[ParamIds.Wit]:0.00}){next}";
-    }
-
-    private static Advice SkillShopAdvice(CareerContext ctx, SkillShop shop, List<string> notes)
+    private static Advice SkillShopAdvice(CareerContext ctx, string header, SkillShop shop, List<Note> notes, List<string> details)
     {
         var advisor = new SkillAdvisor(ctx);
         var candidates = advisor.FromShop(shop);
         var (buy, why) = advisor.Plan(candidates, shop.RemainingPoints);
         var options = candidates.OrderByDescending(c => c.PerPoint)
             .Select(c => new ScoredOption($"{c.Skill.Name} ({c.Price} SP)", c.PerPoint * 100,
-                [$"fit {c.Fit:P0}", $"rating {c.Skill.GradeValue}", buy.Contains(c) ? "BUY" : "skip for now"]))
+                [buy.Contains(c) ? "BUY" : "skip for now", $"fit {c.Fit:P0}", $"rating {c.Skill.GradeValue}"]))
             .ToList();
-        string summary = buy.Count > 0
-            ? $"Buy {string.Join(", ", buy.Select(b => b.Skill.Name))} ({why})."
-            : $"Buy nothing yet: {why}.";
-        return new Advice(Situation.SkillShop, summary, options, notes);
+        string summary = buy.Count > 0 ? $"Buy {string.Join(", ", buy.Select(b => b.Skill.Name))}" : "Buy nothing yet";
+        notes.Add(new Note("Why", why));
+        return new Advice(Situation.SkillShop, header, summary, options, notes, details);
     }
 
-    private static Advice RaceListAdvice(CareerContext ctx, ValueModel values, RaceList list, List<string> notes)
+    private static Advice RaceListAdvice(CareerContext ctx, ValueModel values, string header, RaceList list, List<Note> notes, List<string> details)
     {
         var evaluator = new RaceEvaluator(ctx, values);
         var options = new List<ScoredOption>();
@@ -82,10 +89,10 @@ public sealed class CareerAdvisor(IGameData data)
         }
         options = options.OrderByDescending(o => o.Score).ToList();
         if (list.DisplayTurn != ctx.Turn)
-            notes.Add($"list shows turn {list.DisplayTurn} ({ctx.Data.Turn(list.DisplayTurn)}), not the current turn {ctx.Turn}");
+            notes.Insert(0, new Note("Showing", $"turn {list.DisplayTurn} ({ctx.Data.Turn(list.DisplayTurn)}), not the current turn"));
         var best = options.FirstOrDefault();
-        string summary = best is null ? "No races listed."
-            : best.Score > 0 ? $"Best race: {best.Label}." : "No race worth entering; go back and train.";
-        return new Advice(Situation.RaceList, summary, options, notes);
+        string summary = best is null ? "No races listed"
+            : best.Score > 0 ? $"Enter {best.Label}" : "No race worth entering; go back and train";
+        return new Advice(Situation.RaceList, header, summary, options, notes, details);
     }
 }
