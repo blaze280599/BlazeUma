@@ -169,14 +169,15 @@ public sealed class MasterDatabase : IGameData, IDisposable
     /// <summary>Levels of the effect table's columns after init (level 1): limit_lv5 … limit_lv50.</summary>
     private static readonly int[] EffectColumnLevels = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 
-    public SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak)
+    public SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak, int? exp = null)
     {
         var card = Query("""
             select d.effect_table_id, d.unique_effect_id,
-                   case $lb when 0 then l.limit_0 when 1 then l.limit_1 when 2 then l.limit_2 when 3 then l.limit_3 else l.limit_4 end
+                   case $lb when 0 then l.limit_0 when 1 then l.limit_1 when 2 then l.limit_2 when 3 then l.limit_3 else l.limit_4 end,
+                   coalesce((select max(v.level) from support_card_level v where v.rarity = d.rarity and v.total_exp <= $exp), 1)
             from support_card_data d join support_card_limit l on l.rarity = d.rarity where d.id = $id
-            """, r => (Table: r.GetInt32(0), Unique: r.GetInt32(1), Level: r.GetInt32(2)),
-            ("$id", supportCardId), ("$lb", Math.Clamp(limitBreak, 0, 4))).FirstOrDefault();
+            """, r => (Table: r.GetInt32(0), Unique: r.GetInt32(1), Level: Math.Min(r.GetInt32(2), r.GetInt32(3))),
+            ("$id", supportCardId), ("$lb", Math.Clamp(limitBreak, 0, 4)), ("$exp", exp ?? int.MaxValue)).FirstOrDefault();
         if (card == default) return null;
 
         // Each column holds the value from that level on; -1 means unchanged from the previous column.

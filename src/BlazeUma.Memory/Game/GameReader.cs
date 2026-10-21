@@ -161,7 +161,8 @@ public sealed class GameReader : IDisposable
             ReservedRaceProgramId: O("_reservedRaceProgramId"),
             Conditions: _r.ObscuredIntArray(_r.Ptr(ch, "_charaEffectIdArray")),
             Deck: _r.ArrayItems(_r.Ptr(ch, "EquipSupportCardArray"))
-                .Select(c => new DeckCard(_r.ObscuredInt(c, "Position"), _r.ObscuredInt(c, "SupportCardId"), _r.ObscuredInt(c, "LimitBreakCount")))
+                .Select(c => new DeckCard(_r.ObscuredInt(c, "Position"), _r.ObscuredInt(c, "SupportCardId"), _r.ObscuredInt(c, "LimitBreakCount"),
+                    CardExp(c)))
                 .ToList(),
             Bonds: _r.ListItems(_r.Ptr(ch, "_evaluationList"))
                 .Select(e => new Bond(_r.ObscuredInt(e, "_targetId"), _r.ObscuredInt(e, "_value"), _r.ObscuredInt(e, "_guestCharaId"),
@@ -173,6 +174,16 @@ public sealed class GameReader : IDisposable
             Hints: _r.ListItems(_r.Ptr(ch, "_skillTipsList"))
                 .Select(h => new SkillHint(_r.ObscuredInt(h, "GroupId"), _r.ObscuredInt(h, "Rarity"), _r.ObscuredInt(h, "Level")))
                 .ToList());
+    }
+
+    /// <summary>
+    /// EquipSupportCard.Exp (field seen live, type not yet checked). Optional: a failed read leaves it null, so
+    /// card effects fall back to the limit break's max level instead of losing the whole character.
+    /// </summary>
+    private int? CardExp(ulong card)
+    {
+        try { return _r.IntOrObscured(card, "Exp"); }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { return null; }
     }
 
     private List<Command> ReadCommands(ulong home)

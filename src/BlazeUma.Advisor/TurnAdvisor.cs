@@ -92,7 +92,7 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         // Bonus and Specialty Priority. Friend/group cards and NPCs give no friendship trainings: flat estimate.
         double value = 0;
         if (level < ValueModel.FriendshipBond)
-            value += info is { TrainingCommandId: > 0 } && ctx.Data.SupportCardEffects(card!.SupportCardId, card.LimitBreak) is { } effects
+            value += info is { TrainingCommandId: > 0 } && ctx.Data.SupportCardEffects(card!.SupportCardId, card.LimitBreak, card.Exp) is { } effects
                 ? values.BondTrainingValue(level, info.TrainingCommandId, effects)
                 : ValueModel.BondValuePerPartner * Math.Clamp(1 - ctx.Turn / 48.0, 0.2, 1) * (isCard ? 1 : 0.5);
         if (partner.HasHint) value += ValueModel.HintValue;

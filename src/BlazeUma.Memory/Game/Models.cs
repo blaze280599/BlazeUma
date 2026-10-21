@@ -40,7 +40,8 @@ public sealed record Command(
 
 public sealed record TrainingPartner(int Position, bool HasHint);
 
-public sealed record DeckCard(int Position, int SupportCardId, int LimitBreak);
+/// <summary>A deck slot (EquipSupportCard). Exp is the card's total experience, which gives its level; null if unread.</summary>
+public sealed record DeckCard(int Position, int SupportCardId, int LimitBreak, int? Exp = null);
 
 /// <summary>
 /// Bond gauge; TargetId 1–6 is a deck position, larger ids are scenario NPCs. OutingUnlocked marks a friend

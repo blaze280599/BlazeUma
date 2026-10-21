@@ -46,6 +46,10 @@ public sealed class ManagedReader(IMemory memory, Il2CppRuntime runtime, Obscure
     public long ObscuredLong(ulong obj, string name) =>
         ObscuredDecoder.DecodeLong(memory.ReadBytes(Address(obj, name, Il2CppTypeKind.ValueType), ObscuredDecoder.LongSize), keys.LongKey);
 
+    /// <summary>An int field that may be plain or an ObscuredInt, decided by the field's runtime type.</summary>
+    public int IntOrObscured(ulong obj, string name) =>
+        Field(obj, name).Kind == Il2CppTypeKind.Int32 ? Int(obj, name) : ObscuredInt(obj, name);
+
     public int DecodeObscuredInt(ReadOnlySpan<byte> inline) => ObscuredDecoder.DecodeInt(inline, keys.IntKey);
 
     private static int CheckedCount(long count) => count is >= 0 and <= MaxElements

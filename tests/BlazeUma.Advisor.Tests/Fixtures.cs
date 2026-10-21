@@ -52,7 +52,7 @@ internal sealed class FakeGameData : IGameData
         _ => null,
     };
     /// <summary>Real master.mdb values at limit break 0: Tanino Gimlet SSR level 30, Silence Suzuka R level 20.</summary>
-    public SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak) => supportCardId switch
+    public SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak, int? exp = null) => supportCardId switch
     {
         30145 => new SupportCardEffects(30, 20, 0),
         10002 => new SupportCardEffects(20, 15, 35),

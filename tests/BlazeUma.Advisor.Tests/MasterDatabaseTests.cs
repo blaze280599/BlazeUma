@@ -48,6 +48,17 @@ public sealed class MasterDatabaseTests : IDisposable
     }
 
     [Fact]
+    public void SupportCardEffects_UseTheLevelFromExp_CappedByLimitBreak()
+    {
+        if (_db is null) return;
+        Assert.Equal(new SupportCardEffects(1, 10, 0), _db.SupportCardEffects(30145, 4, exp: 0));         // new SSR: level 1
+        Assert.Equal(new SupportCardEffects(20, 10, 0), _db.SupportCardEffects(30145, 4, exp: 7335));     // level 20, before lv25's 20%
+        Assert.Equal(new SupportCardEffects(20, 10, 0), _db.SupportCardEffects(30145, 4, exp: 7336));
+        Assert.Equal(new SupportCardEffects(30, 20, 0), _db.SupportCardEffects(30145, 0, exp: 999_999));  // capped at LB0 level 30
+        Assert.Equal(new SupportCardEffects(20, 15, 35), _db.SupportCardEffects(10002, 0, exp: 2910));    // R level 20
+    }
+
+    [Fact]
     public void UraFinale_IsOnlyOfferedInTheFinalePeriod()
     {
         if (_db is null) return;
