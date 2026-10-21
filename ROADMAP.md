@@ -139,6 +139,9 @@ Work through these in order, one at a time. Each item says how we know it is don
    reads its components from native memory: m_CachedPtr 0x10, back-pointer 0x28, component array 0x30/0x40).
    Tapping it (`m_OnClick`) does nothing (wired via `AddOnClickOnce`); `TriggerClose()` closes it, checked live.
    In-race Skip stays on screen across the race's 3–4 cutscenes; the runner now re-taps it (up to 12).
+   Cutscene speed (footer Skip ▶/▶▶): `SaveDataManager._applicationSettingSaveLoder._container.TrainingHighSpeedType`
+   (ObscuredInt; 0 off, 1 ▶, 2 ▶▶ = career max; `StoryHighSpeedType` is outside career). Each footer Skip tap
+   cycles it (`OnClickSkip`), checked live 2 → 0 → 1 → 2. `auto run` taps it up to ▶▶ before acting.
    NEVER call Unity APIs (agent `call`, `IsActive`, taps) on heap-scan candidates: a scan of 203
    ButtonCommon candidates hung the game's main thread on turn 32 (a freed object's native pointer).
    Agent calls only on objects reached from live roots (ButtonFinder paths, validated pickers).

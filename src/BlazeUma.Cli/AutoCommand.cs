@@ -118,7 +118,11 @@ internal static class AutoCommand
                 : "  then: pick from any dialog that opens, until the turn advances");
             if (!execute) return 0;
 
-            if (round == 0) Console.WriteLine(ButtonTapper.EnsureAgent(reader.ProcessId));
+            if (round == 0)
+            {
+                Console.WriteLine(ButtonTapper.EnsureAgent(reader.ProcessId));
+                EnsureFastCutscenes(reader);
+            }
             int result = Execute(reader, plan, snapshot.Turn ?? 0, yes);
             // An event right after an action (after a race, on the next turn) is part of finishing it.
             if (result == 0 && round < MaxFollowUpEvents && EventShowing(reader))
@@ -255,6 +259,42 @@ internal static class AutoCommand
         Console.Write($"{question}\n   Enter = tap, s = skip, q = stop, a = all the rest: ");
         string answer = Console.ReadLine()?.Trim().ToLowerInvariant() ?? "q";
         return answer.Length == 0 ? '\n' : answer[0];
+    }
+
+    /// <summary>
+    /// Career cutscene speed (training, events), shown on the footer Skip button: 0 = off, 1 = ▶, 2 = ▶▶ (the
+    /// career maximum). Each Skip tap cycles 0 → 1 → 2 → 0 (<c>PartsSingleModeCommonFooter.OnClickSkip</c>).
+    /// </summary>
+    private const int FastestCutscenes = 2;
+    private const string FooterSkip = "UI._singleModeFooter._skipButton";
+
+    private static int? CutsceneSpeed(ManagedReader r)
+    {
+        try
+        {
+            ulong saves = r.SingletonInstance("Gallop.SaveDataManager");
+            ulong settings = saves == 0 ? 0 : r.Ptr(r.Ptr(saves, "_applicationSettingSaveLoder"), "_container");
+            return settings == 0 ? null : r.ObscuredInt(settings, "TrainingHighSpeedType");
+        }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { return null; }
+    }
+
+    /// <summary>Taps the footer Skip until cutscenes play at ▶▶.</summary>
+    private static void EnsureFastCutscenes(GameReader reader)
+    {
+        var r = reader.ManagedReader;
+        var tapper = new ButtonTapper(reader);
+        for (int tap = 0; tap < 3; tap++)
+        {
+            int? speed = CutsceneSpeed(r);
+            if (speed is null or FastestCutscenes) return;
+            var skip = new ButtonFinder(r).FromCurrentScene().FirstOrDefault(b => b.Path == FooterSkip && b.CanTap);
+            if (skip is null || tapper.IsActive(skip.Address) != true) { Console.WriteLine($"Cutscene speed is {speed}; Skip is not on screen to raise it."); return; }
+            string reply = tapper.Tap(skip.Address);
+            Console.WriteLine($"Cutscene speed {speed} → tap Skip ({reply})");
+            if (!reply.StartsWith("ok")) return;
+            Thread.Sleep(Poll);
+        }
     }
 
     private static IReadOnlyList<FoundButton> DialogButtons(ManagedReader r) =>
