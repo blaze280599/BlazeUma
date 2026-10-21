@@ -28,6 +28,8 @@ internal sealed class AutoBot(BotControl control)
     private const int MaxSelectTaps = 3;
     /// <summary>The training tiles slide in after the menu reports open; a tap before that can be dropped.</summary>
     private static readonly TimeSpan MenuAnimation = TimeSpan.FromMilliseconds(600);
+    /// <summary>Pause before every tap, so menus and popups finish animating (tuned by eye on the live game).</summary>
+    private static readonly TimeSpan StepGap = TimeSpan.FromSeconds(1);
 
     private enum Outcome { Done, Interrupted, NeedsYou }
 
@@ -154,6 +156,7 @@ internal sealed class AutoBot(BotControl control)
         Console.WriteLine("  " + ConsoleUi.Bold("Resuming.") + ConsoleUi.Dim("  Insert = pause · Page Down = stop"));
         _idle = null;
         _actionsThisTurn = 0;
+        _spentTurn = -1;   // the user has looked at the game; judge the turn afresh
         control.Arm();
         return true;
     }
@@ -191,10 +194,6 @@ internal sealed class AutoBot(BotControl control)
             Console.WriteLine();
             Console.WriteLine("  " + ConsoleUi.Dim(new string('─', 70)));
             Console.WriteLine("  " + ConsoleUi.Paint(advice.Header, "36"));
-            // Right after the previous turn's training, IsInTraining can still read true while the home screen is
-            // back with the menu closed (turn 36: the open step was skipped and the tile taps did nothing). A
-            // turn starts on the home screen, so give the flag a moment to clear before trusting it.
-            WaitUntil(() => TrainingMenu.IsOpen(reader.ManagedReader) != true, TimeSpan.FromSeconds(5));
         }
         if (++_actionsThisTurn > MaxActionsPerTurn)
             return (Outcome.NeedsYou, $"Turn {turn} has not moved on after {MaxActionsPerTurn} actions; check the game.");
@@ -207,16 +206,25 @@ internal sealed class AutoBot(BotControl control)
                 .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.ProgramId);
         if (plan.Unsupported is not null) return (Outcome.NeedsYou, $"{action}: {plan.Unsupported}.");
 
-        var result = Execute(reader, plan, turn, out string? problem);
-        // A turn action that ended in an event (Happy Meek's challenge, a card event…) has used the turn.
-        if (result == Outcome.Done && !plan.IsEvent && TurnNow(reader) == turn && EventShowing(reader)) _spentTurn = turn;
+        // After the previous turn's training, IsInTraining stays true while the next turn starts, and through any
+        // event that opens it, until ~1.5 s after the home screen settles (monitor log, turns 38-41). Acting earlier
+        // skips opening the menu and taps the previous menu's hidden tiles (turns 36 and 41). The home screen
+        // cannot be told from a menu opened by hand, so a flag that stays set past the limit is trusted.
+        if (!plan.IsEvent && !plan.RunsRace)
+            WaitUntil(() => TrainingMenu.IsOpen(reader.ManagedReader) != true, TimeSpan.FromSeconds(8));
+        var result = Execute(reader, plan, turn, out string? problem, out bool actionTapped);
+        // A turn action whose own tap went through and then led to an event (Happy Meek's challenge, a card
+        // event…) has used the turn. An event that pops up before that tap (turn 40's camp event) has not.
+        if (result == Outcome.Done && actionTapped && !plan.IsEvent && TurnNow(reader) == turn && EventShowing(reader)) _spentTurn = turn;
         if (result == Outcome.Done) Thread.Sleep(Settle);
         return (result, problem);
     }
 
-    private Outcome Execute(GameReader reader, ActionPlan plan, int startTurn, out string? problem)
+    /// <param name="actionTapped">The plan's last step (the action itself: train, rest, outing, race entry) was tapped.</param>
+    private Outcome Execute(GameReader reader, ActionPlan plan, int startTurn, out string? problem, out bool actionTapped)
     {
         problem = null;
+        actionTapped = false;
         var r = reader.ManagedReader;
         var tapper = new ButtonTapper(reader);
 
@@ -233,6 +241,7 @@ internal sealed class AutoBot(BotControl control)
             bool took = true;
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
+                Thread.Sleep(StepGap);
                 var target = step.Resolve(reader);
                 if (target.SkipReason is not null) break;
                 if (target.Error is not null) { problem = $"{plan.Action}, step {i + 1} ({step.Description}): {target.Error}."; return Outcome.NeedsYou; }
@@ -242,6 +251,7 @@ internal sealed class AutoBot(BotControl control)
                     : target.AsMouse ? tapper.InvokeAsMouse(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..])
                     : tapper.Invoke(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..]);
                 if (!reply.StartsWith("ok")) { problem = $"Tap failed ({step.Description}): {reply}"; return Outcome.NeedsYou; }
+                if (i == plan.Steps.Count - 1) actionTapped = true;
                 if (took = WaitAfter(reader, step, startTurn)) break;
             }
             if (TurnNow(reader) > startTurn || (!plan.IsEvent && EventShowing(reader))) return Outcome.Done;
