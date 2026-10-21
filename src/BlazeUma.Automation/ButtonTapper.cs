@@ -10,7 +10,7 @@ namespace BlazeUma.Automation;
 public sealed class ButtonTapper(GameReader reader)
 {
     /// <summary>The agent version this build talks to; an older loaded agent is swapped out.</summary>
-    public const string AgentVersion = "0.3";
+    public const string AgentVersion = "0.4";
 
     private (int OnClickOffset, ulong InvokeMethod, ulong InvokeFunction)? _resolved;
     private ((ulong Mi, ulong Fn) GameObject, (ulong Mi, ulong Fn) ActiveInHierarchy)? _activeMethods;
@@ -77,6 +77,29 @@ public sealed class ButtonTapper(GameReader reader)
         using var agent = AgentClient.Connect(reader.ProcessId);
         return agent.Send($"tap {obj:x} {fn:x} {mi:x}");
     }
+
+    /// <summary>
+    /// Like <see cref="Invoke"/>, as if from a real mouse press: the input module's static <c>isMouseReact</c>
+    /// is 1 only while it handles a mouse event, and some handlers check it. The training footer only records the
+    /// pressed tile as "previously selected" (which its click requires before training) when it is set.
+    /// </summary>
+    public string InvokeAsMouse(ulong obj, string className, string method)
+    {
+        var rt = reader.ManagedReader.Runtime;
+        ulong klass = rt.GetClass(className);
+        if (klass == 0) return $"error {className} is not initialised yet";
+        ulong input = rt.GetClass(InputModuleClass);
+        if (input == 0) return $"error {InputModuleClass} is not initialised yet";
+        var field = rt.RequireField(input, "isMouseReact").Field;
+        if (!field.IsStatic) return "error isMouseReact is not static";
+        ulong statics = rt.StaticFieldData(input);
+        if (statics == 0) return $"error {InputModuleClass} has no static data yet";
+        var (mi, fn) = rt.RequireMethod(klass, method);
+        using var agent = AgentClient.Connect(reader.ProcessId);
+        return agent.Send($"press {statics + (ulong)field.Offset:x} {obj:x} {fn:x} {mi:x}");
+    }
+
+    private const string InputModuleClass = "UnityEngine.EventSystems.GallopStandaloneInputModule";
 
     /// <summary>
     /// True if the button's GameObject is active in the hierarchy, i.e. actually on screen. Enabled and

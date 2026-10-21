@@ -8,9 +8,11 @@ internal enum WaitFor { Nothing, TrainingMenu, TileSelected, Dialog, TurnAdvance
 
 /// <summary>
 /// The button a step taps right now, or why it is skipped / cannot run. <see cref="Method"/> ("Class.Method"):
-/// call that no-argument method on <see cref="Button"/> instead of its click event.
+/// call that no-argument method on <see cref="Button"/> instead of its click event; <see cref="AsMouse"/>: call
+/// it as during a real mouse press (<see cref="BlazeUma.Automation.ButtonTapper.InvokeAsMouse"/>).
 /// </summary>
-internal sealed record StepTarget(ulong Button, string Where, string? SkipReason = null, string? Error = null, string? Method = null)
+internal sealed record StepTarget(ulong Button, string Where, string? SkipReason = null, string? Error = null, string? Method = null,
+    bool AsMouse = false)
 {
     public static StepTarget Skip(string reason) => new(0, "", SkipReason: reason);
     public static StepTarget Fail(string error) => new(0, "", Error: error);
@@ -43,6 +45,8 @@ internal static class ActionPlanner
     };
 
     public const string GoalRace = "Goal race";
+
+    private const string SelectTile = "Gallop.SingleModeMainViewTrainingFooterItem.SimulateOnClick";
 
     /// <param name="friendName">Name of the character in a deck slot (1–6), to match "Recreation: &lt;name&gt;".</param>
     /// <param name="raceProgram">Program id of a race held this turn, by name, to match "Race: &lt;name&gt;".</param>
@@ -90,10 +94,22 @@ internal static class ActionPlanner
             {
                 var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => t.CommandId == commandId);
                 if (tile is null) return StepTarget.Fail($"no {name} tile on screen");
+                // A tile selects on press, not on click: m_OnClick does not select it (checked live, turn 35).
+                // SimulateOnClick is the item's own press handler (same code as OnDown → footer OnDownItem).
                 return tile.IsSelected
                     ? StepTarget.Skip($"{name} is already selected")
-                    : new StepTarget(tile.Button, $"TrainingFooter._items[{tile.Index}] ({name})");
+                    : new StepTarget(tile.Item, $"TrainingFooter._items[{tile.Index}] ({name})", Method: SelectTile, AsMouse: true);
             }, WaitFor.TileSelected, commandId),
+            // The footer only trains on a click on the tile that is both selected and "previously selected"
+            // (OnClickItem). A press records that, but only while the input module handles a real mouse event
+            // (Select checks GallopStandaloneInputModule.isMouseReact), so press as a mouse right before the click.
+            new PlanStep($"Press the selected {name} tile", g =>
+            {
+                var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => t.CommandId == commandId);
+                if (tile is null) return StepTarget.Fail($"no {name} tile on screen");
+                if (!tile.IsSelected) return StepTarget.Fail($"{name} is not the selected tile");
+                return new StepTarget(tile.Item, $"TrainingFooter._items[{tile.Index}] ({name}, selected)", Method: SelectTile, AsMouse: true);
+            }, WaitFor.Nothing, commandId),
             new PlanStep($"Do {name} training (tap the selected tile)", g =>
             {
                 var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => t.CommandId == commandId);

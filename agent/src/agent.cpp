@@ -7,6 +7,9 @@
 //   tap <obj_hex> <fn_hex> <mi_hex>         -> ok | error <...>    (calls fn(obj, mi) on main thread)
 //   call <obj_hex> <fn_hex> <mi_hex>        -> ok <ret_hex> | error <...>   (same, returns RAX: a pointer
 //                                              or, for bool getters, the low byte)
+//   press <flag_hex> <obj_hex> <fn_hex> <mi_hex> -> ok | error <...>  (tap with the byte at flag set to 1 for
+//                                              the call, then restored: the game's "a real pointer event is
+//                                              being handled" input flags, which some handlers check)
 //   quit                                    -> bye                 (removes hook, unloads DLL)
 
 #include <windows.h>
@@ -18,7 +21,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.3";
+constexpr const char* kVersion = "0.4";
 
 HMODULE g_self = nullptr;
 volatile bool g_quit = false;
@@ -29,6 +32,7 @@ struct TapJob
     void* obj = nullptr;
     void* (*fn)(void*, void*) = nullptr;
     void* mi = nullptr;
+    unsigned char* flag = nullptr;   // press: set to 1 around the call, then restored
     void* result = nullptr;
     HANDLE done = nullptr;    // auto-reset event
     volatile LONG status = 0; // 0 pending, 1 ok, 2 SEH, 3 timed out (hook must drop silently)
@@ -60,7 +64,12 @@ LRESULT CALLBACK HookProc(int code, WPARAM wParam, LPARAM lParam)
         if (job != nullptr)
         {
             if (InterlockedCompareExchange(&job->status, 1, 0) == 0)
+            {
+                unsigned char saved = job->flag != nullptr ? *job->flag : 0;
+                if (job->flag != nullptr) *job->flag = 1;
                 InterlockedExchange(&job->status, RunUnderSeh(job->fn, job->obj, job->mi, &job->result));
+                if (job->flag != nullptr) *job->flag = saved;
+            }
             SetEvent(job->done);
         }
     }
@@ -101,12 +110,17 @@ void RemoveHook()
     if (g_hook != nullptr) { UnhookWindowsHookEx(g_hook); g_hook = nullptr; }
 }
 
-// Runs fn(obj, mi) on the main thread. withResult: reply "ok <rax hex>" instead of "ok".
-std::string HandleCall(const std::string& args, bool withResult)
+// Runs fn(obj, mi) on the main thread. withResult: reply "ok <rax hex>" instead of "ok". withFlag: args start
+// with a flag byte's address, set to 1 for the call.
+std::string HandleCall(const std::string& args, bool withResult, bool withFlag = false)
 {
-    unsigned long long obj = 0, fn = 0, mi = 0;
-    if (sscanf_s(args.c_str(), "%llx %llx %llx", &obj, &fn, &mi) != 3 || fn == 0 || mi == 0 || obj == 0)
-        return "error bad args; expected '<obj_hex> <fn_hex> <mi_hex>'";
+    unsigned long long flag = 0, obj = 0, fn = 0, mi = 0;
+    bool parsed = withFlag
+        ? sscanf_s(args.c_str(), "%llx %llx %llx %llx", &flag, &obj, &fn, &mi) == 4 && flag != 0
+        : sscanf_s(args.c_str(), "%llx %llx %llx", &obj, &fn, &mi) == 3;
+    if (!parsed || fn == 0 || mi == 0 || obj == 0)
+        return withFlag ? "error bad args; expected '<flag_hex> <obj_hex> <fn_hex> <mi_hex>'"
+                        : "error bad args; expected '<obj_hex> <fn_hex> <mi_hex>'";
 
     DWORD tid = 0;
     if (!EnsureHook(&tid))
@@ -116,6 +130,7 @@ std::string HandleCall(const std::string& args, bool withResult)
     job.obj = reinterpret_cast<void*>(obj);
     job.fn = reinterpret_cast<void*(*)(void*, void*)>(fn);
     job.mi = reinterpret_cast<void*>(mi);
+    job.flag = reinterpret_cast<unsigned char*>(flag);
     job.done = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (job.done == nullptr) return "error CreateEvent failed";
 
@@ -157,6 +172,8 @@ std::string Handle(std::string command)
         return HandleCall(command.substr(4), false);
     if (command.rfind("call ", 0) == 0)
         return HandleCall(command.substr(5), true);
+    if (command.rfind("press ", 0) == 0)
+        return HandleCall(command.substr(6), false, true);
     if (command == "quit")
     {
         g_quit = true;

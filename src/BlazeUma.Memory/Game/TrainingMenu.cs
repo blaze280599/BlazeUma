@@ -5,7 +5,8 @@ namespace BlazeUma.Memory.Game;
 /// <summary>One training tile in the home screen's training footer.</summary>
 /// <param name="CommandId">Training command id from the tile's TurnInfo (101 Speed, 105 Stamina, 102 Power, 103 Guts, 106 Wit).</param>
 /// <param name="IsSelected">The highlighted tile. Tapping a selected tile performs that training.</param>
-public sealed record TrainingTile(int Index, int CommandId, bool IsSelected, ulong Button);
+/// <param name="Item">The SingleModeMainViewTrainingFooterItem itself (selecting goes through its press handler).</param>
+public sealed record TrainingTile(int Index, int CommandId, bool IsSelected, ulong Button, ulong Item);
 
 /// <summary>
 /// Reads the training tiles: <c>SceneManager._currentViewBase.TrainingFooter._items</c>, a
@@ -38,7 +39,7 @@ public static class TrainingMenu
         {
             ulong turnInfo = r.Ptr(items[i], "_trainingMenu");
             if (turnInfo == 0) continue;
-            tiles.Add(new TrainingTile(i, r.ObscuredInt(turnInfo, "_commandId"), r.Bool(items[i], "_isSelect"), r.Ptr(items[i], "_button")));
+            tiles.Add(new TrainingTile(i, r.ObscuredInt(turnInfo, "_commandId"), r.Bool(items[i], "_isSelect"), r.Ptr(items[i], "_button"), items[i]));
         }
         return tiles;
     }

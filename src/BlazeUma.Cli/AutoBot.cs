@@ -214,6 +214,7 @@ internal sealed class AutoBot(BotControl control)
             // A select tapped while the menu is still animating in can be dropped by the game; its effect can be
             // checked, so tap again. Other taps are not repeated (a second Rest or training tap could act twice).
             int attempts = step.Wait is WaitFor.TileSelected or WaitFor.RaceSelected ? MaxSelectTaps : 1;
+            bool took = true;
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
                 var target = step.Resolve(reader);
@@ -221,13 +222,19 @@ internal sealed class AutoBot(BotControl control)
                 if (target.Error is not null) { problem = $"{plan.Action}, step {i + 1} ({step.Description}): {target.Error}."; return Outcome.NeedsYou; }
 
                 Console.WriteLine(ConsoleUi.Dim($"   • {step.Description}" + (attempt > 1 ? $" (again, try {attempt})" : "")));
-                string reply = target.Method is { } m
-                    ? tapper.Invoke(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..])
-                    : tapper.Tap(target.Button);
+                string reply = target.Method is not { } m ? tapper.Tap(target.Button)
+                    : target.AsMouse ? tapper.InvokeAsMouse(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..])
+                    : tapper.Invoke(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..]);
                 if (!reply.StartsWith("ok")) { problem = $"Tap failed ({step.Description}): {reply}"; return Outcome.NeedsYou; }
-                if (WaitAfter(reader, step, startTurn)) break;
+                if (took = WaitAfter(reader, step, startTurn)) break;
             }
             if (TurnNow(reader) > startTurn || (!plan.IsEvent && EventShowing(reader))) return Outcome.Done;
+            // The action's own tap changed nothing: tapping again would only wait again.
+            if (!took && step.Wait == WaitFor.TurnAdvance)
+            {
+                problem = $"{plan.Action}: \"{step.Description}\" was tapped but nothing happened within 90 s.";
+                return Outcome.NeedsYou;
+            }
         }
 
         if (plan.RunsRace && (resume || TurnNow(reader) <= startTurn))
