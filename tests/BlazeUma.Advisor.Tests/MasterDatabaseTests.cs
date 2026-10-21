@@ -37,6 +37,17 @@ public sealed class MasterDatabaseTests : IDisposable
     }
 
     [Fact]
+    public void UraFinale_IsOnlyOfferedInTheFinalePeriod()
+    {
+        if (_db is null) return;
+        // Classic Late Jan (turn 26) shares month/half with the Finale qualifier; only real races may appear.
+        var turn26 = _db.ProgramsForTurn(26).Select(p => p.Name).ToList();
+        Assert.DoesNotContain("URA Finale Qualifier", turn26);
+        Assert.Contains("Wakagoma Stakes", turn26);
+        Assert.Contains("URA Finale Qualifier", _db.ProgramsForTurn(74).Select(p => p.Name));
+    }
+
+    [Fact]
     public void Skills_AndHints_Resolve()
     {
         if (_db is null) return;

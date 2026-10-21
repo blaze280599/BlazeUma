@@ -33,6 +33,14 @@ Work through these in order, one at a time. Each item says how we know it is don
    popup. Also check an event with no choices does not produce stale advice.
    Progress: `LooksActive` was true for both logged events on turns 16–17 and false back on the home
    screen; titles and effects were right. Still to check: a no-choice event.
+   Built: an active event with no choices now says "no choice to make, continue" instead of showing
+   training advice, and choices whose `_cachedRewardEventId` differs from the showing event's id get a
+   warning. On the home screen (turn 18) the previews were empty and the id was 0, so the game clears
+   them after each event. Next: confirm on a live no-choice event (the log records it).
+   Found while playing (turn 26): the home screen offered "URA Finale Qualifier" in Classic January
+   because `race_permission` 5 was treated as "any year"; every permission-5 program is a URA Finale race,
+   so 5 now means the finale period only. Fan requirements for goals are now urgent when two or fewer
+   race turns remain before the deadline (missing one fails the goal), with a warning note.
    *Done when:* two or more events checked, `LooksActive` confirmed or replaced.
 
 5. [ ] **Skill screen advice, live** (live: Skills screen, ideally the turn before Tulip Sho)

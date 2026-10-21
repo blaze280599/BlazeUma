@@ -99,6 +99,8 @@ public sealed record CareerSnapshot(
     IReadOnlyList<Command>? Commands,
     StoryEvent? Story,
     IReadOnlyList<EventChoice>? EventChoices,
+    /// <summary>Event id the choice previews were built for (WorkSingleModeData._cachedRewardEventId).</summary>
+    int? EventChoicesEventId,
     SkillShop? SkillShop,
     RaceList? RaceList,
     IReadOnlyList<string> Errors);

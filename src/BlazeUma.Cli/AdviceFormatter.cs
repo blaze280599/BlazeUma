@@ -62,7 +62,7 @@ internal sealed class AdviceFormatter(bool verbose, bool color, int width)
             foreach (var note in advice.Notes)
             {
                 string label = note.Label.PadRight(noteWidth);
-                sb.AppendLine(" " + (note.Label == "Read error" ? Yellow(label) : Bold(label)) + Fit(note.Text, noteWidth + 1));
+                sb.AppendLine(" " + (note.Label is "Read error" or "Warning" ? Yellow(label) : Bold(label)) + Fit(note.Text, noteWidth + 1));
             }
         }
         if (verbose)

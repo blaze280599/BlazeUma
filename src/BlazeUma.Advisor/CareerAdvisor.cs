@@ -30,7 +30,8 @@ public sealed class CareerAdvisor(IGameData data)
                 (next.Turn > ctx.Turn ? $" (in {next.Turn - ctx.Turn})" : " (today)") +
                 (next.RequiredPlace > 0 ? $", need top {next.RequiredPlace}" : "")));
         if (ctx.FanShortfall() is var (fanGoal, shortfall))
-            notes.Add(new Note("Fans", $"{shortfall} more needed to enter {fanGoal.Name}"));
+            notes.Add(new Note(fanGoal.Turn - ctx.Turn <= 4 ? "Warning" : "Fans",
+                $"{shortfall} more fans needed to enter {fanGoal.Name} (turn {fanGoal.Turn}); missing it fails the goal"));
         var details = new List<string>
         {
             $"stat weights Spd {w[ParamIds.Speed]:0.00}  Sta {w[ParamIds.Stamina]:0.00}  Pow {w[ParamIds.Power]:0.00}  Gut {w[ParamIds.Guts]:0.00}  Wit {w[ParamIds.Wit]:0.00}",
@@ -40,10 +41,15 @@ public sealed class CareerAdvisor(IGameData data)
             return SkillShopAdvice(ctx, header, shop, notes, details);
         if (snapshot.Screen?.ViewController == RaceScreen && snapshot.RaceList is { } races)
             return RaceListAdvice(ctx, values, header, races, notes, details);
-        if (snapshot.Story is { LooksActive: true } story && snapshot.EventChoices is { Count: > 0 } choices)
+        if (snapshot.Story is { LooksActive: true } story)
         {
-            var ranked = new EventAdvisor(ctx, values).Rank(choices, story);
             string title = data.StoryTitle(story.StoryId) ?? $"story {story.StoryId}";
+            if (snapshot.EventChoices is not { Count: > 0 } choices)
+                return new Advice(Situation.Event, header, $"Event \"{title}\": no choice to make, continue", [], notes, details);
+            // The previews should belong to this event; seen to match once so far, so only warn on a mismatch.
+            if (snapshot.EventChoicesEventId is int choicesFor && choicesFor != story.EventId)
+                notes.Insert(0, new Note("Warning", $"choices were built for event {choicesFor}, but event {story.EventId} is showing; they may be stale"));
+            var ranked = new EventAdvisor(ctx, values).Rank(choices, story);
             return new Advice(Situation.Event, header, $"Event \"{title}\": {ranked[0].Label}", ranked, notes, details);
         }
 

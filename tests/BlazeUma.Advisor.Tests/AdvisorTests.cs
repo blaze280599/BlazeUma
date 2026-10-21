@@ -69,6 +69,25 @@ public class AdvisorTests
     }
 
     [Fact]
+    public void ActiveEventWithoutChoices_SaysContinue()
+    {
+        var story = new StoryEvent(809008001, 7498, 0, 9008, 10003, LooksActive: true);
+        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(), story: story, choices: []));
+        Assert.Equal(Situation.Event, advice.Situation);
+        Assert.Contains("no choice", advice.Summary);
+        Assert.Empty(advice.Options);
+    }
+
+    [Fact]
+    public void ChoicesBuiltForAnotherEvent_AreFlagged()
+    {
+        var story = new StoryEvent(501009713, 1363, 1009, 0, 10002, LooksActive: true);
+        var choices = new List<EventChoice> { new(1, [[new EventEffect(1, 1, 10, 0)]]) };
+        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(), story: story, choices: choices, choicesFor: 7014));
+        Assert.Equal("Warning", advice.Notes[0].Label);
+    }
+
+    [Fact]
     public void InactiveStory_IsIgnored()
     {
         var story = new StoryEvent(501009713, 1363, 1009, 0, 10002, LooksActive: false);
@@ -103,6 +122,22 @@ public class AdvisorTests
         _data.TurnRaces.Add(FakeGameData.Niigata);                         // a suitable race every turn
         double manyChances = Races().Evaluate(FakeGameData.Niigata).Score;
         Assert.True(lastChance > manyChances + 10, $"{lastChance} vs {manyChances}");
+    }
+
+    [Fact]
+    public void FanDeadlineClose_RacingBeatsAStrongTraining()
+    {
+        // Turn 26, Tulip Sho on 29, 950 fans short, no other races before it: the race is the last real chance.
+        var wakagoma = new RaceProgram(51, 0, "Wakagoma Stakes", 400, 2000, Ground.Turf, 1, 2, 2, 350, 2000);
+        _data.TurnRaces.Add(wakagoma);
+        var commands = new List<Command>
+        {
+            Snapshots.Train(TrainingIds.Stamina, 0, -19, ("stamina", 12), ("guts", 8), ("skillPoints", 4)),
+            Snapshots.Simple(CommandType.Race, 401),
+        };
+        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(fans: 800, mood: Mood.Great), turn: 26, commands: commands));
+        Assert.Equal("Race: Wakagoma Stakes", advice.Best!.Label);
+        Assert.Contains(advice.Notes, n => n.Label == "Warning" && n.Text.Contains("950"));
     }
 
     [Fact]

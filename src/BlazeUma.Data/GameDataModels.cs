@@ -36,14 +36,18 @@ public sealed record RaceProgram(
 {
     public DistanceCategory Category => Distances.Categorize(Distance);
 
-    /// <summary>race_permission: 1 junior, 2 classic, 3 classic + senior, 4 senior (5 treated as any year).</summary>
+    /// <summary>
+    /// race_permission: 1 junior, 2 classic, 3 classic + senior, 4 senior, 5 scenario finale period
+    /// (year 4; every permission-5 program is a URA Finale race, held in "January").
+    /// </summary>
     public bool OpenInYear(int year) => Permission switch
     {
         1 => year == 1,
         2 => year == 2,
         3 => year is 2 or 3,
         4 => year == 3,
-        _ => true,
+        5 => year == 4,
+        _ => false,
     };
 
     public string GradeName => Enum.IsDefined(typeof(RaceGrade), Grade) ? ((RaceGrade)Grade).ToString() : $"grade{Grade}";

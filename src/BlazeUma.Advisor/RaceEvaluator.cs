@@ -31,14 +31,20 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
 
         if (ctx.FanShortfall() is var (goal, shortfall))
         {
-            // Fans are only urgent when few suitable races are left before the goal.
+            // Missing a goal's fan requirement fails the goal and ends the career, so the fans must be won
+            // before the deadline. With few race turns left, race early enough to have a retry.
             int chances = SuitableTurnsBefore(goal.Turn);
-            double urgency = chances <= 1 ? 1 : Math.Clamp(2.0 / (chances + 1), 0.25, 1);
+            double urgency = chances switch
+            {
+                <= 2 => 1.5,   // this turn plus at most two retries
+                <= 5 => 0.8,
+                _ => Math.Clamp(2.0 / (chances + 1), 0.25, 1),
+            };
             double covers = Math.Min(1, expectedFans / shortfall);
             double fanScore = 30 * covers * urgency;
             score += fanScore;
             reasons.Add($"needs {shortfall} more fans for {goal.Name}; expected +{expectedFans:0}, " +
-                $"{chances} other suitable race turn(s) before it (+{fanScore:0.0})");
+                $"{chances} other suitable race turn(s) before it{(chances <= 2 ? " — deadline close" : "")} (+{fanScore:0.0})");
         }
         else
         {

@@ -90,9 +90,10 @@ internal static class Snapshots
     public static Command Simple(CommandType type, int id) => new(type, id, true, 0, new Dictionary<string, Gain>(), []);
 
     public static CareerSnapshot Snapshot(Character character, int turn = 14, IReadOnlyList<Command>? commands = null,
-        StoryEvent? story = null, IReadOnlyList<EventChoice>? choices = null, int lastTraining = 101) => new(
+        StoryEvent? story = null, IReadOnlyList<EventChoice>? choices = null, int lastTraining = 101, int? choicesFor = null) => new(
         DateTimeOffset.Now, 1, new Screen("Gallop.SingleModeSceneController", "Gallop.SingleModeMainViewController", 1101),
-        true, turn, 3, lastTraining, character, commands ?? StandardCommands(), story, choices, null, null, []);
+        true, turn, 3, lastTraining, character, commands ?? StandardCommands(), story, choices,
+        choicesFor ?? story?.EventId, null, null, []);
 
     public static IReadOnlyList<Command> StandardCommands(int failure = 0) =>
     [

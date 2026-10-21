@@ -105,6 +105,7 @@ public sealed class GameReader : IDisposable
             Commands: home != 0 ? Section("commands", () => ReadCommands(home)) : null,
             Story: active ? Section("story", ReadStory) : null,
             EventChoices: active ? Section("eventChoices", () => ReadEventChoices(_r.Ptr(sm, "EventChoiceRewardDict"))) : null,
+            EventChoicesEventId: active ? _r.Int(sm, "_cachedRewardEventId") : null,
             SkillShop: screen?.ViewController == SkillScreen ? Section("skillShop", ReadSkillShop) : null,
             RaceList: screen?.ViewController == RaceScreen ? Section("raceList", ReadRaceList) : null,
             Errors: errors);
