@@ -105,7 +105,14 @@ internal static class RaceRunner
                     // whose button appears after an animation (Goal Achieved's Next, which the blocker does not close).
                     else if (buttonless.Elapsed >= TimeSpan.FromSeconds(5)) next = ($"Tap to close \"{DialogTitle(r, DialogIndex(blocker))}\"", blocker);
                 }
-                else next = ScreenPick(tapper, screen, buttons, locked);
+                else
+                {
+                    // The paddock knows View Results is locked (padlock) before it is tapped; skip it rather than
+                    // tap it and close "Unlock Requirements".
+                    if (screen == PaddockScreen && SkipLocked(r) && locked.Add(SkipButtonPath))
+                        Console.WriteLine("   View Results is locked (race not watched before); racing instead.");
+                    next = ScreenPick(tapper, screen, buttons, locked);
+                }
             }
             catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException)
             {
@@ -163,6 +170,17 @@ internal static class RaceRunner
             return manager != 0 && r.ListItems(r.Ptr(manager, "_dialogList")).Count is > 0 and int n && AfterRaceTitles.Contains(DialogTitle(r, n - 1));
         }
         catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { return false; }
+    }
+
+    private const string PaddockScreen = "Gallop.SingleModePaddockViewController";
+    private const string SkipButtonPath = "View.PaddockContentsHolder._raceSkipButton";
+
+    /// <summary>PaddockViewControllerBase._isLockRaceSkipButton: View Results has its padlock (race never watched).</summary>
+    private static bool SkipLocked(ManagedReader r)
+    {
+        ulong scene = r.SingletonInstance("Gallop.SceneManager");
+        ulong controller = scene == 0 ? 0 : r.Ptr(scene, "_currentViewController");
+        return controller != 0 && r.ClassName(controller) == PaddockScreen && r.Bool(controller, "_isLockRaceSkipButton");
     }
 
     /// <summary>The first rule for this screen whose button is really on screen.</summary>
