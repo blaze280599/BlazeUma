@@ -18,24 +18,33 @@ public sealed class ButtonFinder(ManagedReader reader)
     public const string ButtonClass = "Gallop.ButtonCommon";
     public const int DefaultMaxDepth = 5;
 
-    /// <summary>Buttons reachable from <c>SceneManager._currentViewBase</c> and <c>_currentViewController</c>.</summary>
+    /// <summary>
+    /// Buttons reachable from <c>SceneManager._currentViewBase</c>, its view controller, and every open
+    /// dialog in <c>DialogManager._dialogList</c> (which is where Close/OK buttons on popups live).
+    /// </summary>
     public IReadOnlyList<FoundButton> FromCurrentScene(int maxDepth = DefaultMaxDepth)
     {
-        ulong scene = reader.SingletonInstance("Gallop.SceneManager");
-        if (scene == 0) return [];
         ulong buttonClass = reader.Runtime.GetClass(ButtonClass);
         if (buttonClass == 0) return [];
 
         var found = new List<FoundButton>();
         var visited = new HashSet<ulong>();
-        foreach (var (root, label) in new[]
+
+        ulong scene = reader.SingletonInstance("Gallop.SceneManager");
+        if (scene != 0)
         {
-            (reader.Ptr(scene, "_currentViewBase"), "View"),
-            (reader.Ptr(scene, "_currentViewController"), "Controller"),
-        })
-        {
-            if (root != 0) Walk(root, label, 0, maxDepth, buttonClass, found, visited);
+            Walk(reader.Ptr(scene, "_currentViewBase"), "View", 0, maxDepth, buttonClass, found, visited);
+            Walk(reader.Ptr(scene, "_currentViewController"), "Controller", 0, maxDepth, buttonClass, found, visited);
         }
+
+        ulong dialogManager = reader.SingletonInstance("Gallop.DialogManager");
+        if (dialogManager != 0)
+        {
+            var dialogs = reader.ListItems(reader.Ptr(dialogManager, "_dialogList"));
+            for (int i = 0; i < dialogs.Count; i++)
+                Walk(dialogs[i], $"Dialog[{i}]", 0, maxDepth, buttonClass, found, visited);
+        }
+
         return found;
     }
 

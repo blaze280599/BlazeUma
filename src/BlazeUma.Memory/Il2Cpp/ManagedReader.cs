@@ -122,14 +122,16 @@ public sealed class ManagedReader(IMemory memory, Il2CppRuntime runtime, Obscure
     }
 
     /// <summary>
-    /// Instance of a Gallop.Singleton&lt;T&gt; / MonoSingleton&lt;T&gt;: walks from the concrete class to the
-    /// generic parent declaring the static <c>_instance</c>. Returns 0 if the class or instance does not exist yet.
+    /// Instance of a Gallop.Singleton&lt;T&gt; / MonoSingleton&lt;T&gt;: walks the class and its generic parents
+    /// looking for the static <c>_instance</c>. Returns 0 if the class or instance does not exist yet.
+    /// Some singletons (e.g. DialogManager) declare <c>_instance</c> on the class itself rather than on a
+    /// generic parent, so we start at <paramref name="qualifiedName"/>'s own class.
     /// </summary>
     public ulong SingletonInstance(string qualifiedName)
     {
         ulong klass = runtime.GetClass(qualifiedName);
         if (klass == 0) return 0;
-        for (ulong k = runtime.Parent(klass); k != 0; k = runtime.Parent(k))
+        for (ulong k = klass; k != 0; k = runtime.Parent(k))
         {
             var field = runtime.DeclaredFields(k).FirstOrDefault(f => f.IsStatic && !f.IsLiteral && f.Name == "_instance");
             if (field is null) continue;

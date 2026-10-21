@@ -15,7 +15,28 @@ namespace BlazeUma.Cli;
 /// </summary>
 internal static class AgentCommand
 {
-    public const string Usage = "usage: BlazeUma.Cli agent inject|ping|unload|tap <addr> [--pid N] [--dll PATH]";
+    public const string Usage = "usage: BlazeUma.Cli agent inject|ping|unload|tap <addr>|tap-path <query> [--pid N] [--dll PATH]";
+
+    /// <summary>Short names for buttons the advisor cares about; matched against the button's field path.</summary>
+    private static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Rest"] = "nextMonth",
+        ["Training"] = "trainingButton",
+        ["Recreation"] = "outingButton",
+        ["Outing"] = "outingButton",
+        ["Races"] = "raceRegistButton",
+        ["Race"] = "raceRegistButton",
+        ["Skills"] = "skillGetButton",
+        ["Infirmary"] = "hospitalButton",
+        ["Hospital"] = "hospitalButton",
+        ["Hint"] = "AdviceButton",
+        ["Details"] = "DetailButton",
+        // Dialog buttons: a single-button popup uses _centerButton; two-button popups use _left and _right.
+        ["Close"] = "centerButton",
+        ["OK"] = "centerButton",
+        ["Confirm"] = "rightButton",
+        ["Cancel"] = "leftButton",
+    };
 
     public static int Run(string[] args)
     {
@@ -30,7 +51,7 @@ internal static class AgentCommand
                 case "--pid": pid = int.Parse(args[++i]); break;
                 case "--dll": dll = args[++i]; break;
                 default:
-                    if (args[0] == "tap" && tapArg is null) tapArg = args[i];
+                    if (args[0] is "tap" or "tap-path" && tapArg is null) tapArg = args[i];
                     else { Console.Error.WriteLine(Usage); return 2; }
                     break;
             }
@@ -58,6 +79,9 @@ internal static class AgentCommand
             case "tap":
                 if (tapArg is null) { Console.Error.WriteLine("tap needs a button address (hex); run `BlazeUma.Cli buttons` to see them."); return 2; }
                 return Tap(pid, tapArg);
+            case "tap-path":
+                if (tapArg is null) { Console.Error.WriteLine("tap-path needs a path substring (e.g. 'Rest', 'Details', 'Close')."); return 2; }
+                return TapByPath(pid, tapArg);
             default:
                 Console.Error.WriteLine(Usage);
                 return 2;
@@ -91,6 +115,34 @@ internal static class AgentCommand
         return reply.StartsWith("ok") ? 0 : 1;
 
         static int Fail(string message) { Console.Error.WriteLine(message); return 1; }
+    }
+
+    /// <summary>Finds a tappable button whose path contains <paramref name="query"/> (case-insensitive) and taps it.</summary>
+    private static int TapByPath(int? pid, string query)
+    {
+        string match = Aliases.TryGetValue(query, out var mapped) ? mapped : query;
+        ButtonFinder finder;
+        IReadOnlyList<FoundButton> buttons;
+        using (var reader = GameReader.Open(pid))
+        {
+            finder = new ButtonFinder(reader.ManagedReader);
+            buttons = finder.FromCurrentScene();
+        }
+        var candidates = buttons.Where(b => b.CanTap && b.Path.Contains(match, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (candidates.Count == 0)
+        {
+            Console.Error.WriteLine($"No tappable button matches '{query}' (looked for '{match}'). Run `BlazeUma.Cli buttons --all` to see what's there.");
+            return 1;
+        }
+        if (candidates.Count > 1)
+        {
+            Console.Error.WriteLine($"'{query}' is ambiguous:");
+            foreach (var c in candidates) Console.Error.WriteLine($"  0x{c.Address:X}  {c.Path}");
+            return 1;
+        }
+        var button = candidates[0];
+        Console.WriteLine($"Tapping {button.Path} at 0x{button.Address:X}");
+        return Tap(pid, $"0x{button.Address:X}");
     }
 
     private static string Ask(int pid, string command)

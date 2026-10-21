@@ -104,8 +104,15 @@ Work through these in order, one at a time. Each item says how we know it is don
    `WH_GETMESSAGE` hook (no code patching). Live: tapped `DetailButton` on turn 28, Umamusume Details
    panel opened as if the user had tapped it, game and reader unaffected afterwards, `agent unload`
    removed the hook and module cleanly.
-   Known gap for step 4: ButtonFinder only walks SceneManager views; dialog overlays like the Details
-   popup's Close button live in `DialogManager._dialogList` and need a separate walk.
+   Step 4a done (open/close dialog cycles end-to-end):
+   - `SingletonInstance` now checks the class itself (not just its parents), so DialogManager resolves.
+   - `ButtonFinder` also walks `DialogManager._dialogList`; dialog buttons appear as `Dialog[i]...`.
+   - `BlazeUma.Cli agent tap-path <query>` taps a button whose field path contains the query,
+     with aliases: Rest/Training/Recreation/Races/Skills/Infirmary/Hint/Details/Close/OK/Confirm/Cancel.
+   - Live on turn 28: open Details via `tap-path Details`, closed via `tap-path Close` (routes to
+     `Dialog[0]._currentDialogObj._centerButton`), opened Hint via `tap-path Hint`. Game and reader
+     unaffected, agent unloaded cleanly. In-view overlays like the Tazuna hint are not DialogManager
+     dialogs; they usually self-dismiss or need their own button, to be handled per-case later.
 9. [ ] **Supervised mode**: the bot performs the pick after you press a key; stops on anything unexpected.
 10. [ ] **Auto mode**: full career loop from turn 1 to the results screen, with a stop hotkey.
 
