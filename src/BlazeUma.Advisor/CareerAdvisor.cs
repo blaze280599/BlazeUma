@@ -87,12 +87,22 @@ public sealed class CareerAdvisor(IGameData data)
             if (!entry.CanEnter) { options.Add(new ScoredOption(program.Name, -100, [$"locked (needs {entry.NeedFans} fans)"])); continue; }
             options.Add(evaluator.Evaluate(program));
         }
-        options = options.OrderByDescending(o => o.Score).ToList();
-        if (list.DisplayTurn != ctx.Turn)
+        // Racing uses the turn, so compare with the best thing to do instead (only meaningful for the current turn).
+        ScoredOption? instead = null;
+        if (list.DisplayTurn == ctx.Turn)
+        {
+            instead = new TurnAdvisor(ctx, values).Rank().FirstOrDefault(o => !o.Label.StartsWith("Race:"));
+            if (instead is not null) options.Add(instead with { Label = $"Don't race: {instead.Label}" });
+        }
+        else
+        {
             notes.Insert(0, new Note("Showing", $"turn {list.DisplayTurn} ({ctx.Data.Turn(list.DisplayTurn)}), not the current turn"));
+        }
+        options = options.OrderByDescending(o => o.Score).ToList();
         var best = options.FirstOrDefault();
         string summary = best is null ? "No races listed"
-            : best.Score > 0 ? $"Enter {best.Label}" : "No race worth entering; go back and train";
+            : best.Label.StartsWith("Don't race:") ? $"Go back: {instead!.Label}"
+            : best.Score > 0 ? $"Enter {best.Label}" : "No race worth entering; go back";
         return new Advice(Situation.RaceList, header, summary, options, notes, details);
     }
 }

@@ -76,20 +76,38 @@ public class AdvisorTests
         Assert.Equal(Situation.TrainingTurn, Advise(Snapshots.Snapshot(Snapshots.Daiwa(), story: story, choices: choices)).Situation);
     }
 
+    private RaceEvaluator Races(int turn = 16, Mood mood = Mood.Normal)
+    {
+        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(fans: 800, mood: mood), turn: turn), _data);
+        return new RaceEvaluator(ctx, new ValueModel(ctx));
+    }
+
     [Fact]
     public void FanShortfall_MakesFittingRaceAttractive_AndBadAptitudeRaceNot()
     {
         _data.TurnRaces.AddRange([FakeGameData.Hakodate, FakeGameData.Niigata]);
-        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(fans: 800), turn: 16), _data);
-        var evaluator = new RaceEvaluator(ctx, new ValueModel(ctx));
+        var evaluator = Races();
 
         var niigata = evaluator.Evaluate(FakeGameData.Niigata);   // 1600m mile, aptitude A
         var hakodate = evaluator.Evaluate(FakeGameData.Hakodate); // 1200m sprint, aptitude E
 
-        Assert.True(niigata.Score > 20, niigata.ToString());
+        Assert.True(niigata.Score > 0, niigata.ToString());
         Assert.True(hakodate.Score < 0, hakodate.ToString());
         Assert.Equal("Niigata Junior Stakes", evaluator.BestPredicted()!.Label);
     }
+
+    [Fact]
+    public void Fans_AreUrgentOnlyWhenFewSuitableRacesRemain()
+    {
+        double lastChance = Races().Evaluate(FakeGameData.Niigata).Score;   // no other races before Tulip Sho
+        _data.TurnRaces.Add(FakeGameData.Niigata);                         // a suitable race every turn
+        double manyChances = Races().Evaluate(FakeGameData.Niigata).Score;
+        Assert.True(lastChance > manyChances + 10, $"{lastChance} vs {manyChances}");
+    }
+
+    [Fact]
+    public void BadMood_LowersRaceValue() =>
+        Assert.True(Races(mood: Mood.Bad).Evaluate(FakeGameData.Niigata).Score < Races().Evaluate(FakeGameData.Niigata).Score);
 }
 
 public class TrainingPartnerTests

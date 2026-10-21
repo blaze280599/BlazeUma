@@ -12,11 +12,13 @@ Work through these in order, one at a time. Each item says how we know it is don
    specialty training).
    *Done when:* reasons read like "Silence Suzuka 29, Director Akikawa 16" and tests cover NPC value.
 
-2. [ ] **Race list advice, live** (live: Races screen on a turn with races, e.g. turn 14+)
+2. [x] **Race list advice, live** (live: Races screen on a turn with races, e.g. turn 14+)
    Check the ranking and reasons against what a sensible player would enter (aptitude, fans for
    Tulip Sho, distance).
    *Done when:* the advice matches the screen's list and the pick makes sense; fix anything that doesn't.
-   Known gap to check: race scoring ignores mood (turn 14 picked Chukyo Junior Stakes at Awful mood).
+   Result (turn 14): list matched the screen (Hakodate Junior Stakes, Chukyo Junior Stakes). Fixed: mood now
+   scales the chance to place, fan need only counts as urgent when few suitable race turns remain before the
+   goal, and the race screen compares racing with the best non-race action ("Go back: …").
 
 3. [ ] **Turn log** (code)
    Append every snapshot + advice + what actually happened next turn to a JSONL file per career.

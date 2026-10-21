@@ -21,16 +21,24 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         }
 
         // Placing chance is unknown without a race simulation; assume a fair chance at good aptitude.
-        double placeChance = distanceApt >= 7 && groundApt >= 7 ? 0.6 : 0.4;
+        // Mood scales race performance (Bad/Awful run noticeably worse), so it scales the chance too.
+        int mood = (int)ctx.Character.Mood;
+        double placeChance = (distanceApt >= 7 && groundApt >= 7 ? 0.6 : 0.4) * (1 + 0.08 * (mood - 3));
         double expectedFans = race.FirstPlaceFans * placeChance;
         double score = 0;
+        if (mood < 3)
+            reasons.Add($"mood {ctx.Character.Mood} lowers the chance to place ({placeChance:P0})");
 
         if (ctx.FanShortfall() is var (goal, shortfall))
         {
+            // Fans are only urgent when few suitable races are left before the goal.
+            int chances = SuitableTurnsBefore(goal.Turn);
+            double urgency = chances <= 1 ? 1 : Math.Clamp(2.0 / (chances + 1), 0.25, 1);
             double covers = Math.Min(1, expectedFans / shortfall);
-            double fanScore = 30 * covers;
+            double fanScore = 30 * covers * urgency;
             score += fanScore;
-            reasons.Add($"needs {shortfall} more fans for {goal.Name}; expected +{expectedFans:0} (+{fanScore:0.0})");
+            reasons.Add($"needs {shortfall} more fans for {goal.Name}; expected +{expectedFans:0}, " +
+                $"{chances} other suitable race turn(s) before it (+{fanScore:0.0})");
         }
         else
         {
@@ -57,6 +65,14 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         }
         return new ScoredOption(race.Name, score, reasons);
     }
+
+    private int? _suitableTurns;
+
+    /// <summary>Later turns before <paramref name="goalTurn"/> with an enterable race at B+ aptitude.</summary>
+    private int SuitableTurnsBefore(int goalTurn) => _suitableTurns ??= Enumerable.Range(ctx.Turn + 1, Math.Max(0, goalTurn - ctx.Turn - 1))
+        .Count(t => ctx.Data.ProgramsForTurn(t).Any(r =>
+            r.Grade != (int)RaceGrade.Maiden && r.NeedFans <= ctx.Character.Fans
+            && ctx.Aptitude(r.Category) >= MinAptitude && ctx.Aptitude(r.Ground) >= MinAptitude));
 
     /// <summary>Best optional race the trainee can enter this turn according to game data, if any.</summary>
     public ScoredOption? BestPredicted()
