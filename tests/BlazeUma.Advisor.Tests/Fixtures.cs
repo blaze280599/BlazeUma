@@ -43,7 +43,12 @@ internal sealed class FakeGameData : IGameData
     public SkillInfo? Skill(int skillId) => _skills.GetValueOrDefault(skillId);
     public SkillInfo? SkillForHint(int groupId, int rarity) => _skills.Values.FirstOrDefault(s => s.GroupId == groupId && s.Rarity == rarity);
     public IReadOnlyList<int> BaseSkillIds(int cardId, int talentLevel) => [200282, 200722, 200572];
-    public SupportCardInfo? SupportCard(int supportCardId) => null;
+    public SupportCardInfo? SupportCard(int supportCardId) => supportCardId switch
+    {
+        30145 => new SupportCardInfo(30145, "[Welcome to Umayuru] Tanino Gimlet", 1084, 1, 102),
+        10002 => new SupportCardInfo(10002, "[Tracen Academy] Silence Suzuka", 1002, 1, 101),
+        _ => null,
+    };
     public ConditionInfo? Condition(int conditionId) => conditionId switch
     {
         6 => new ConditionInfo(6, "Practice Poor", true),
@@ -51,7 +56,10 @@ internal sealed class FakeGameData : IGameData
         _ => null,
     };
     public string? StoryTitle(int storyId) => storyId == 501009713 ? "Get Well Soon!" : null;
-    public string? CharacterName(int charaId) => charaId == 9008 ? "Light Hello" : null;
+    public string? CharacterName(int charaId) => charaId switch
+    {
+        9008 => "Light Hello", 1084 => "Tanino Gimlet", 1002 => "Silence Suzuka", 9002 => "Director Akikawa", _ => null,
+    };
     public EventEffectFormat? EventEffect(int displayId) => null;
 }
 
@@ -66,8 +74,12 @@ internal static class Snapshots
         RunningStyle: 2,
         Aptitudes: new Aptitudes(7, 2, 3, 7, 7, 7, 7, 7, 3, 1),
         RouteRaceIds: [22, 23, 30, 31], ReservedRaceProgramId: 0, Conditions: [],
-        Deck: [],
-        Bonds: [new Bond(1, 20, 1084, false, 0), new Bond(2, 90, 1002, false, 0), new Bond(6, 44, 9008, lightHelloOuting, 0)],
+        Deck: [new DeckCard(1, 30145, 0), new DeckCard(2, 10002, 0)],
+        Bonds:
+        [
+            new Bond(1, 20, 1084, false, 0), new Bond(2, 90, 1002, false, 0), new Bond(6, 44, 9008, lightHelloOuting, 0),
+            new Bond(102, 16, 9002, false, 0),
+        ],
         Skills: [new AcquiredSkill(10091, 2)],
         Hints: hints ?? []);
 

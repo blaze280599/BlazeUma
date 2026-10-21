@@ -51,14 +51,14 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         }
 
         double bonds = 0;
+        var names = new List<string>();
         foreach (var partner in command.Partners)
         {
-            int bond = ctx.Character.Bonds.FirstOrDefault(b => b.TargetId == partner.Position)?.Value ?? 0;
-            if (bond < ValueModel.FriendshipBond)
-                bonds += ValueModel.BondValuePerPartner * Math.Clamp(1 - ctx.Turn / 48.0, 0.2, 1);
-            if (partner.HasHint) bonds += ValueModel.HintValue;
+            var (value, label) = PartnerValue(partner, command.Id);
+            bonds += value;
+            names.Add(label);
         }
-        if (bonds > 0) reasons.Add($"{command.Partners.Count} partner(s): bond/hints (+{bonds:0.0})");
+        if (names.Count > 0) reasons.Add($"with {string.Join(", ", names)} (+{bonds:0.0})");
 
         double energy = values.Energy(command.Gains.TryGetValue("energy", out var e) ? e.Value + e.Bonus : 0);
         reasons.Add($"energy ({energy:+0.0;-0.0})");
@@ -70,6 +70,30 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         double score = (1 - p) * (gains + bonds) - p * values.FailureLoss + energy;
         string name = TrainingNames.GetValueOrDefault(command.Id, $"Training {command.Id}");
         return new ScoredOption($"Train {name}", score, reasons);
+    }
+
+    /// <summary>
+    /// Bond worth of training next to a partner. Deck cards (positions 1–6) build toward friendship
+    /// trainings at 80 bond; scenario NPCs (ids above 100, e.g. Director Akikawa) never give friendship
+    /// trainings, so their bond counts half. The stat gains already include any partner bonus.
+    /// </summary>
+    private (double Value, string Label) PartnerValue(TrainingPartner partner, int trainingId)
+    {
+        var bond = ctx.Character.Bonds.FirstOrDefault(b => b.TargetId == partner.Position);
+        int level = bond?.Value ?? 0;
+        string name = bond is not null ? ctx.Data.CharacterName(bond.CharaId) ?? $"#{partner.Position}" : $"#{partner.Position}";
+        bool isCard = partner.Position is >= 1 and <= 6;
+        var card = isCard ? ctx.Character.Deck.FirstOrDefault(d => d.Position == partner.Position) : null;
+        bool friendship = card is not null && level >= ValueModel.FriendshipBond
+            && ctx.Data.SupportCard(card.SupportCardId)?.TrainingCommandId == trainingId;
+
+        double value = 0;
+        if (level < ValueModel.FriendshipBond)
+            value += ValueModel.BondValuePerPartner * Math.Clamp(1 - ctx.Turn / 48.0, 0.2, 1) * (isCard ? 1 : 0.5);
+        if (partner.HasHint) value += ValueModel.HintValue;
+
+        string label = $"{name} {level}" + (friendship ? " friendship!" : "") + (partner.HasHint ? " hint" : "");
+        return (value, label);
     }
 
     private ScoredOption Rest()

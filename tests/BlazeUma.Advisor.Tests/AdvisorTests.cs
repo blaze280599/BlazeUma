@@ -92,6 +92,41 @@ public class AdvisorTests
     }
 }
 
+public class TrainingPartnerTests
+{
+    private static ScoredOption Score(int trainingId, params int[] partnerPositions)
+    {
+        var command = Snapshots.Train(trainingId, 0, -20, ("speed", 10)) with
+        {
+            Partners = partnerPositions.Select(p => new TrainingPartner(p, false)).ToList(),
+        };
+        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(), commands: [command]), new FakeGameData());
+        return new TurnAdvisor(ctx, new ValueModel(ctx)).Rank().Single(o => o.Label.StartsWith("Train"));
+    }
+
+    [Fact]
+    public void NpcBond_CountsHalfOfACardsBond()
+    {
+        double alone = Score(TrainingIds.Speed).Score;
+        double card = Score(TrainingIds.Speed, 1).Score - alone;    // Tanino Gimlet, bond 20
+        double npc = Score(TrainingIds.Speed, 102).Score - alone;   // Director Akikawa, bond 16
+        Assert.True(card > 0);
+        Assert.Equal(card / 2, npc, 3);
+    }
+
+    [Fact]
+    public void Reasons_NamePartners_AndFlagFriendshipTraining()
+    {
+        // Silence Suzuka: speed card at bond 90 on Speed training.
+        var speed = Score(TrainingIds.Speed, 2, 102);
+        Assert.Contains(speed.Reasons, r => r.Contains("Silence Suzuka 90 friendship!") && r.Contains("Director Akikawa 16"));
+
+        // Same card on Power training is not a friendship training.
+        var power = Score(TrainingIds.Power, 2);
+        Assert.DoesNotContain(power.Reasons, r => r.Contains("friendship!"));
+    }
+}
+
 public class ValueModelTests
 {
     private static ValueModel Model(int energy = 50, Mood mood = Mood.Normal, Stats? stats = null)
