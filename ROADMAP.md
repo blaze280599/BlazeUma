@@ -104,6 +104,16 @@ Work through these in order, one at a time. Each item says how we know it is don
    `WH_GETMESSAGE` hook (no code patching). Live: tapped `DetailButton` on turn 28, Umamusume Details
    panel opened as if the user had tapped it, game and reader unaffected afterwards, `agent unload`
    removed the hook and module cleanly.
+   Step 4d: Recreation picker. First live `auto run` (turn 28) tapped Recreation and detected the dialog
+   in 0.3 s, but offered 13 meaningless buttons: DialogCommon keeps 4 layout templates in
+   `_dialogObjArray` (now skipped; only `_currentDialogObj` is shown) and the rows themselves live in the
+   dialog's contents GameObject. The picker is `Gallop.DialogSingleModeOutingPartnerSelect`; its
+   `_itemList` rows have `_decideButton` and `OutingInfo` (`_masterOuting.CommandGroupId` 301 = trainee,
+   390 = friend card, plus `_equipSupportCard` with deck slot / card id). Nothing managed points at it, so
+   `OutingPicker` finds it with a bounded heap scan (`HeapScanner`, ~0.4 s) and accepts only the one whose
+   `_dialog` is open. Plan for "Recreation: X" taps the matching row; live: Light Hello → row 0 (390),
+   trainee → row 1 (301). `_inputBlock` is never offered (it can act as cancel).
+
    Step 4c: supervised runner. `TrainingMenu` reads each training tile's command id (from its TurnInfo)
    and `_isSelect` (live turn 28: 0 Speed 101 selected, 1 Stamina 105, 2 Power 102, 3 Guts 103, 4 Wit 106;
    a selected tile executes on the first tap). `ButtonTapper` (Automation) is the shared tap path and

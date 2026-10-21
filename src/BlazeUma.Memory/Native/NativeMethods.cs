@@ -32,6 +32,24 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool ReadProcessMemory(SafeProcessHandle process, nint address, ref byte buffer, nint size, out nint read);
 
+    public const uint MemCommit = 0x1000, MemPrivate = 0x20000, PageGuard = 0x100, PageNoAccess = 0x01;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MemoryBasicInformation
+    {
+        public nint BaseAddress;
+        public nint AllocationBase;
+        public uint AllocationProtect;
+        public ushort PartitionId;
+        public nint RegionSize;
+        public uint State;
+        public uint Protect;
+        public uint Type;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern nint VirtualQueryEx(SafeProcessHandle process, nint address, out MemoryBasicInformation info, nint length);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern SafeFileHandle CreateToolhelp32Snapshot(uint flags, int processId);
 

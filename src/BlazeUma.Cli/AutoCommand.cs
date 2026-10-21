@@ -26,6 +26,7 @@ internal static class AutoCommand
         bool execute = args[0] == "run";
         int? pid = null;
         string? metadata = null, master = null, action = null;
+        bool resolveAll = false;   // diagnostic: resolve every step against the current screen
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
@@ -34,6 +35,7 @@ internal static class AutoCommand
                 case "--metadata": metadata = args[++i]; break;
                 case "--master": master = args[++i]; break;
                 case "--action": action = args[++i]; break;
+                case "--resolve-all": resolveAll = true; break;
                 default: Console.Error.WriteLine(Usage); return 2;
             }
         }
@@ -64,13 +66,15 @@ internal static class AutoCommand
             Console.WriteLine($"Requested: {action} (advisor would pick {advice.Best?.Label ?? advice.Summary})");
         }
 
-        var plan = ActionPlanner.For(action);
+        var bonds = snapshot.Character?.Bonds ?? [];
+        var plan = ActionPlanner.For(action, slot =>
+            bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null);
         if (plan.Unsupported is not null) { Console.WriteLine($"{action}: {plan.Unsupported}."); return 0; }
 
         var r = reader.ManagedReader;
         for (int i = 0; i < plan.Steps.Count; i++)
         {
-            string target = i == 0 ? Describe(plan.Steps[i].Resolve(r)) : "(found on screen when it runs)";
+            string target = i == 0 || resolveAll ? Describe(plan.Steps[i].Resolve(reader)) : "(found on screen when it runs)";
             Console.WriteLine($"  {i + 1}. {plan.Steps[i].Description}  {target}");
         }
         Console.WriteLine("  then: pick from any dialog that opens, until the turn advances");
@@ -91,7 +95,7 @@ internal static class AutoCommand
         for (int i = 0; i < plan.Steps.Count; i++)
         {
             var step = plan.Steps[i];
-            var target = step.Resolve(r);
+            var target = step.Resolve(reader);
             if (target.SkipReason is not null) { Console.WriteLine($"Step {i + 1}: skipped, {target.SkipReason}."); continue; }
             if (target.Error is not null) { Console.WriteLine($"Step {i + 1}: stopping, {target.Error}."); return 1; }
 
@@ -169,7 +173,9 @@ internal static class AutoCommand
     }
 
     private static IReadOnlyList<FoundButton> DialogButtons(ManagedReader r) =>
-        new ButtonFinder(r).FromCurrentScene().Where(b => b.CanTap && b.Path.StartsWith("Dialog[")).ToList();
+        // _inputBlock is an invisible full-screen blocker; tapping it can count as tapping outside (cancel).
+        new ButtonFinder(r).FromCurrentScene()
+            .Where(b => b.CanTap && b.Path.StartsWith("Dialog[") && !b.Path.EndsWith("_inputBlock")).ToList();
 
     private static bool? InTraining(ManagedReader r)
     {

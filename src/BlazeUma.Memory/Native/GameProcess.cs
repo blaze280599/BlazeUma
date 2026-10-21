@@ -80,6 +80,24 @@ public sealed class GameProcess : IMemory, IDisposable
             throw new MemoryReadException($"Partial read at 0x{address:X}: {read} of {buffer.Length} bytes");
     }
 
+    /// <summary>Committed, readable, non-guard private regions (where the managed heap lives).</summary>
+    public IEnumerable<(ulong Base, ulong Size)> PrivateRegions()
+    {
+        ulong address = MemoryExtensions.MinAddress;
+        int size = Marshal.SizeOf<NativeMethods.MemoryBasicInformation>();
+        while (address < MemoryExtensions.MaxAddress)
+        {
+            if (NativeMethods.VirtualQueryEx(_handle, (nint)address, out var info, size) == 0) yield break;
+            ulong start = (ulong)info.BaseAddress, length = (ulong)info.RegionSize;
+            if (info.State == NativeMethods.MemCommit && info.Type == NativeMethods.MemPrivate
+                && (info.Protect & (NativeMethods.PageGuard | NativeMethods.PageNoAccess)) == 0 && info.Protect != 0)
+                yield return (start, length);
+            ulong next = start + length;
+            if (next <= address) yield break;
+            address = next;
+        }
+    }
+
     /// <summary>global-metadata.dat next to this GameAssembly.dll (works for any install location).</summary>
     public string DefaultMetadataPath =>
         Path.Combine(Path.GetDirectoryName(GameAssemblyPath)!, "UmamusumePrettyDerby_Data", "il2cpp_data", "Metadata", "global-metadata.dat");

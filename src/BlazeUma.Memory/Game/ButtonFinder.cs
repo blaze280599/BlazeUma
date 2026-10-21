@@ -111,6 +111,8 @@ public sealed class ButtonFinder(ManagedReader reader)
             {
                 if (field.IsStatic || field.IsLiteral) continue;
                 if (field.Kind is not (Il2CppTypeKind.Class or Il2CppTypeKind.GenericInstance or Il2CppTypeKind.SzArray)) continue;
+                // DialogCommon keeps every layout template in _dialogObjArray; only _currentDialogObj is shown.
+                if (field.Name == "_dialogObjArray") continue;
                 ulong child;
                 try { child = reader.Memory.ReadPointer(obj + (ulong)field.Offset); }
                 catch (MemoryReadException) { continue; }

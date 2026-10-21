@@ -19,6 +19,16 @@ public sealed class GameReader : IDisposable
     public ManagedReader ManagedReader => _r;
     public int ProcessId => _process.ProcessId;
 
+    /// <summary>
+    /// Candidate live instances of a class found by a bounded heap scan (see <see cref="HeapScanner"/>).
+    /// Only for objects nothing managed points at; callers must validate each candidate.
+    /// </summary>
+    public IReadOnlyList<ulong> FindInstances(string qualifiedName, TimeSpan budget)
+    {
+        ulong klass = Runtime.GetClass(qualifiedName);
+        return klass == 0 ? [] : HeapScanner.FindObjects(_process, klass, budget: budget);
+    }
+
     /// <summary>Install directory of the running game (contains GameAssembly.dll).</summary>
     public string GameDirectory => Path.GetDirectoryName(_process.GameAssemblyPath)!;
 
