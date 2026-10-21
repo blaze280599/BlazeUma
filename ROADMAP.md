@@ -138,7 +138,19 @@ Work through these in order, one at a time. Each item says how we know it is don
    NEVER call Unity APIs (agent `call`, `IsActive`, taps) on heap-scan candidates: a scan of 203
    ButtonCommon candidates hung the game's main thread on turn 32 (a freed object's native pointer).
    Agent calls only on objects reached from live roots (ButtonFinder paths, validated pickers).
-   `inspect dialog|view|controller` dumps fields for mapping.
+   `inspect dialog|view|controller|story|0x<addr>` dumps fields for mapping.
+   Events (turn 32, "Recommended Restaurant"): choices live on `StoryManager._view` (`StoryView`
+   `ChoiceButtons[i]`, top = 0, `_index` = i), drawn over the home screen, so ButtonFinder walks a "Story"
+   root while an event with choices is showing. The "Choices" popup is the reward preview (Close). The
+   choices' `_button.m_OnClick` has no listeners; `StoryChoiceButton.OnClickChoice` needs the pointer
+   inside, so `auto run` calls `OnClickAutoSelect` (the game's auto-select: same `ChoiceButton(_index)`)
+   through new `ButtonTapper.Invoke`. Live: Top choice taken in 0.5 s, Speed/Power up.
+   Turn 32 unattended (`auto run --yes`): "Insufficient Fans" (Cancel / Race) covered the home screen; race
+   plans now tap its Race (opens the list), other plans tap Cancel first. Flora Stakes ran end to end
+   (+2,585 fans, Oaks entry met). Fast-forward had been spent on the runner list before Race!, so the
+   race played at normal speed; Race! now ranks first. A post-race event ("Solid Showing") followed: the
+   runner hands over when an event with choices shows on home, and `auto run` answers up to 3 follow-up
+   events in the same run (never the next turn's action).
    The game refuses DLLs from %LOCALAPPDATA% (LoadLibraryW null); the injector loads a content-hashed copy
    from `agent/build/Release/loaded/` so rebuilding never hits a locked file.
 

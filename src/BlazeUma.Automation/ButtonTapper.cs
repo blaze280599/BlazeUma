@@ -64,6 +64,21 @@ public sealed class ButtonTapper(GameReader reader)
     }
 
     /// <summary>
+    /// Calls an instance method with no arguments (<c>void M()</c>) on <paramref name="obj"/> on the main thread.
+    /// For controls that handle taps outside <c>m_OnClick</c> (event choices: <c>StoryChoiceButton.OnClickChoice</c>).
+    /// Only for objects reached from live roots. Returns the agent's reply.
+    /// </summary>
+    public string Invoke(ulong obj, string className, string method)
+    {
+        var rt = reader.ManagedReader.Runtime;
+        ulong klass = rt.GetClass(className);
+        if (klass == 0) return $"error {className} is not initialised yet";
+        var (mi, fn) = rt.RequireMethod(klass, method);
+        using var agent = AgentClient.Connect(reader.ProcessId);
+        return agent.Send($"tap {obj:x} {fn:x} {mi:x}");
+    }
+
+    /// <summary>
     /// True if the button's GameObject is active in the hierarchy, i.e. actually on screen. Enabled and
     /// interactable are not enough: hidden layouts keep their buttons enabled. Asks the agent (Unity API,
     /// main thread). Null if the agent call failed.

@@ -39,11 +39,12 @@ internal static class RaceRunner
         new("Gallop.RaceMainViewController", "Controller._resultList._singleModeNextButton", "Next (leave the results)"),
         new("Gallop.RaceMainViewController", "Controller._resultList._nextButton", "Next (leave the results)"),
         new("Gallop.RaceMainViewController", "Controller._raceResultSceneUI._skipButton", "Skip the finish scene"),
+        // Runner list shown before a watched race (View Results locked): its Race! button starts it. Before the
+        // in-race buttons: fast-forward is also visible on the runner list and would be spent before the start.
+        new("Gallop.RaceMainViewController", "Controller._raceMemberListUI._startButton", "Race! (start from the runner list)"),
         new("Gallop.RaceMainViewController", "Controller._raceUI._skipButtonCommon", "Skip the race"),
         // Skip does nothing while a race is watched for the first time (Oka Sho, turn 31); fast-forward does.
         new("Gallop.RaceMainViewController", "Controller._raceUI._fastForwardUI._fastForwardButtonCommon", "Fast-forward the race", Once: true),
-        // Runner list shown before a watched race (View Results locked): its Race! button starts it.
-        new("Gallop.RaceMainViewController", "Controller._raceMemberListUI._startButton", "Race! (start from the runner list)"),
         new("Gallop.SingleModeMonthStartViewController", "View._screenTapButton", "Tap through the new month"),
     ];
 
@@ -77,6 +78,12 @@ internal static class RaceRunner
                 screen = ScreenName(r);
                 var buttons = new ButtonFinder(r, includeDialogTemplates: true).FromCurrentScene();
                 bool dialogOpen = buttons.Any(b => b.Path.StartsWith("Dialog[") && b.CanTap);
+                // A post-race event with choices: the caller answers it (auto run's event plan).
+                if (screen == Home && EventWithChoices(r))
+                {
+                    Console.WriteLine("   An event with choices is showing; handing over to answer it.");
+                    return 0;
+                }
                 if (screen != Home || dialogOpen) settled.Restart();
                 else if (settled.Elapsed >= Settle && (resumed || Turn(reader) > startTurn)) return 0;
                 if (dialogOpen)
@@ -223,6 +230,13 @@ internal static class RaceRunner
         if (index >= dialogs.Count) return null;
         ulong data = r.Ptr(dialogs[index], "_data");
         return data == 0 ? null : r.String(r.Ptr(data, "Title"));
+    }
+
+    private static bool EventWithChoices(ManagedReader r)
+    {
+        ulong story = r.SingletonInstance("Gallop.StoryManager");
+        ulong controller = story == 0 ? 0 : r.Ptr(story, "_viewController");
+        return controller != 0 && r.Bool(controller, "_needsSingleModeSave") && r.Bool(controller, "_needsUpdateSelectIndex");
     }
 
     private static string ScreenName(ManagedReader r)

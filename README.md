@@ -84,6 +84,7 @@ dotnet run --project src/BlazeUma.Cli -- auto run --action "Train Wit"   # a spe
 dotnet run --project src/BlazeUma.Cli -- auto run --action "Race: Mile Cup"   # optional race; race day runs the goal race
 ```
 
+Events with choices: `auto run` closes the reward preview and takes the advisor's choice.
 Races run end to end: entry confirmation, View Results, the result scenes, goal popups and the new-month
 screen, until home on the next turn. An unmapped screen stops the run and hands back to you.
 

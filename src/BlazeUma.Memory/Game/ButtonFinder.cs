@@ -52,6 +52,17 @@ public sealed class ButtonFinder(ManagedReader reader, bool includeDialogTemplat
             }
         }
 
+        // Event choices live on StoryManager._view (Gallop.StoryView.ChoiceButtons), which can sit over the
+        // home screen. Only while an event with choices is showing: the manager keeps its last view around.
+        try
+        {
+            ulong story = reader.SingletonInstance("Gallop.StoryManager");
+            ulong storyController = story == 0 ? 0 : reader.Ptr(story, "_viewController");
+            if (storyController != 0 && reader.Bool(storyController, "_needsSingleModeSave") && reader.Bool(storyController, "_needsUpdateSelectIndex"))
+                Walk(reader.Ptr(story, "_view"), "Story", 0, maxDepth, buttonClass, found, visited);
+        }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { }
+
         ulong dialogManager = reader.SingletonInstance("Gallop.DialogManager");
         if (dialogManager != 0)
         {

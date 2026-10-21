@@ -1,13 +1,17 @@
 using BlazeUma.Memory;
 using BlazeUma.Memory.Game;
+using BlazeUma.Memory.Il2Cpp;
 
 namespace BlazeUma.Cli;
 
 /// <summary>What the runner waits for after a tap before moving on.</summary>
-internal enum WaitFor { Nothing, TrainingMenu, TileSelected, Dialog, TurnAdvance, RaceList, RaceSelected, LeftRaceList }
+internal enum WaitFor { Nothing, TrainingMenu, TileSelected, Dialog, TurnAdvance, RaceList, RaceSelected, LeftRaceList, DialogClosed, EventDone }
 
-/// <summary>The button a step taps right now, or why it is skipped / cannot run.</summary>
-internal sealed record StepTarget(ulong Button, string Where, string? SkipReason = null, string? Error = null)
+/// <summary>
+/// The button a step taps right now, or why it is skipped / cannot run. <see cref="Method"/> ("Class.Method"):
+/// call that no-argument method on <see cref="Button"/> instead of its click event.
+/// </summary>
+internal sealed record StepTarget(ulong Button, string Where, string? SkipReason = null, string? Error = null, string? Method = null)
 {
     public static StepTarget Skip(string reason) => new(0, "", SkipReason: reason);
     public static StepTarget Fail(string error) => new(0, "", Error: error);
@@ -19,8 +23,10 @@ internal sealed record PlanStep(string Description, Func<GameReader, StepTarget>
 /// <summary>
 /// An advisor pick turned into taps. Steps not covered yet leave <see cref="Unsupported"/> set.
 /// <see cref="RunsRace"/>: after the steps, <see cref="RaceRunner"/> drives the race screens to the next turn.
+/// <see cref="IsEvent"/>: answers an event, so an event on screen is the starting point, not the end.
 /// </summary>
-internal sealed record ActionPlan(string Action, IReadOnlyList<PlanStep> Steps, string? Unsupported = null, bool RunsRace = false);
+internal sealed record ActionPlan(string Action, IReadOnlyList<PlanStep> Steps, string? Unsupported = null, bool RunsRace = false,
+    bool IsEvent = false);
 
 /// <summary>
 /// Maps advisor actions (option labels) to tap sequences on the home screen. Each step finds its button on
@@ -43,6 +49,14 @@ internal static class ActionPlanner
     /// <param name="raceProgram">Program id of a race held this turn, by name, to match "Race: &lt;name&gt;".</param>
     public static ActionPlan For(string action, Func<int, string?> friendName, Func<string, int?> raceProgram)
     {
+        var plan = ForAction(action, friendName, raceProgram);
+        return plan.Unsupported is null && !plan.RunsRace && !plan.IsEvent
+            ? plan with { Steps = [DismissInsufficientFans(), .. plan.Steps] }
+            : plan;
+    }
+
+    private static ActionPlan ForAction(string action, Func<int, string?> friendName, Func<string, int?> raceProgram)
+    {
         if (action.StartsWith("Train ", StringComparison.OrdinalIgnoreCase) && Trainings.TryGetValue(action[6..].Trim(), out int id))
             return Training(action, id);
         if (action.Equals(GoalRace, StringComparison.OrdinalIgnoreCase))
@@ -54,6 +68,8 @@ internal static class ActionPlanner
                 ? Race(action, "_raceRegistButton", "Tap Races (opens the race list)", program)
                 : new ActionPlan(action, [], Unsupported: $"no race named {name} is held this turn");
         }
+        if (EventChoiceNumber(action) is int choice)
+            return EventChoice(action, choice);
         if (action.Equals("Rest", StringComparison.OrdinalIgnoreCase))
             return new ActionPlan(action, [Home("Tap Rest", "_nextMonthButton", WaitFor.Dialog)]);
         if (action.StartsWith("Recreation", StringComparison.OrdinalIgnoreCase))
@@ -100,7 +116,7 @@ internal static class ActionPlanner
 
         return new ActionPlan(action,
         [
-            Home(openDescription, openButton, WaitFor.RaceList),
+            OpenRaceList(openDescription, openButton),
             new PlanStep("Select the race", g =>
             {
                 var list = RaceEntryScreen.Read(g.ManagedReader);
@@ -125,6 +141,90 @@ internal static class ActionPlanner
             }, WaitFor.LeftRaceList),
         ], RunsRace: true);
     }
+
+    /// <summary>The advisor's event option labels: "Top choice" = 1, "Bottom choice" = 2, "Choice N" = N.</summary>
+    public static int? EventChoiceNumber(string action) =>
+        action.Equals("Top choice", StringComparison.OrdinalIgnoreCase) ? 1
+        : action.Equals("Bottom choice", StringComparison.OrdinalIgnoreCase) ? 2
+        : action.StartsWith("Choice ", StringComparison.OrdinalIgnoreCase) && int.TryParse(action[7..], out int n) && n > 0 ? n
+        : null;
+
+    /// <summary>
+    /// Answer an event: close the "Choices" reward preview if it is open, then tap the choice. Choice buttons
+    /// are <c>Story.ChoiceButtons[i]</c> (StoryManager's view, over the home screen), top first.
+    /// </summary>
+    private static ActionPlan EventChoice(string action, int choice) => new(action,
+    [
+        new PlanStep("Close the \"Choices\" preview", g =>
+        {
+            var close = new ButtonFinder(g.ManagedReader).FromCurrentScene()
+                .FirstOrDefault(b => b.CanTap && b.Path.EndsWith("._currentDialogObj._centerButton"));
+            if (close is null) return StepTarget.Skip("no preview open");
+            return DialogTitle(g.ManagedReader) == "Choices"
+                ? new StepTarget(close.Address, close.Path)
+                : StepTarget.Fail($"another popup is open (\"{DialogTitle(g.ManagedReader)}\")");
+        }, WaitFor.DialogClosed),
+        new PlanStep($"Pick choice {choice} ({action})", g =>
+        {
+            var r = g.ManagedReader;
+            var buttons = new ButtonFinder(r).FromCurrentScene();
+            var pick = buttons.FirstOrDefault(b => b.Path == $"Story.ChoiceButtons[{choice - 1}]._button");
+            if (pick is null || !pick.CanTap) return StepTarget.Fail($"choice {choice} is not on screen");
+            // The choice's _button has no click listeners. StoryChoiceButton.OnClickChoice only acts while the
+            // pointer is inside; OnClickAutoSelect (the game's auto-select) sends the same choice without that check,
+            // via OnClickCallback or StoryChoiceController.Instance (created on demand, never null).
+            ulong story = r.SingletonInstance("Gallop.StoryManager");
+            var rows = r.ArrayItems(r.Ptr(r.Ptr(story, "_view"), "<ChoiceButtons>k__BackingField"));
+            if (choice - 1 >= rows.Count) return StepTarget.Fail($"choice {choice} is not on screen");
+            ulong row = rows[choice - 1];
+            if (r.Int(row, "_index") != choice - 1) return StepTarget.Fail($"choice row {choice - 1} has index {r.Int(row, "_index")}");
+            return new StepTarget(row, $"Story.ChoiceButtons[{choice - 1}]", Method: "Gallop.StoryChoiceButton.OnClickAutoSelect");
+        }, WaitFor.EventDone),
+    ], IsEvent: true);
+
+    private static string? DialogTitle(ManagedReader r)
+    {
+        ulong manager = r.SingletonInstance("Gallop.DialogManager");
+        var dialogs = manager == 0 ? [] : r.ListItems(r.Ptr(manager, "_dialogList"));
+        ulong data = dialogs.Count == 0 ? 0 : r.Ptr(dialogs[^1], "_data");
+        return data == 0 ? null : r.String(r.Ptr(data, "Title"));
+    }
+
+    public const string InsufficientFansTitle = "Insufficient Fans";
+
+    /// <summary>
+    /// Open the race list. The game may already show it, or show "Insufficient Fans" (Cancel / Race) on the
+    /// home screen when a goal race needs more fans; its Race button opens the list too.
+    /// </summary>
+    private static PlanStep OpenRaceList(string description, string openButton)
+    {
+        var home = Home(description, openButton, WaitFor.RaceList);
+        return home with
+        {
+            Resolve = g =>
+            {
+                if (RaceEntryScreen.Read(g.ManagedReader) is not null) return StepTarget.Skip("the race list is already open");
+                if (DialogTitle(g.ManagedReader) == InsufficientFansTitle)
+                    return DialogButton(g, "_rightButton") is { } race
+                        ? new StepTarget(race.Address, $"{race.Path} (Race on \"{InsufficientFansTitle}\")")
+                        : StepTarget.Fail($"\"{InsufficientFansTitle}\" has no Race button");
+                return home.Resolve(g);
+            },
+        };
+    }
+
+    /// <summary>
+    /// Step that taps Cancel on "Insufficient Fans" if it is open (it covers the home buttons), for plans
+    /// that are not races. Skipped otherwise.
+    /// </summary>
+    public static PlanStep DismissInsufficientFans() => new("Cancel \"Insufficient Fans\" (not racing this turn)", g =>
+        DialogTitle(g.ManagedReader) != InsufficientFansTitle ? StepTarget.Skip("no fans warning open")
+        : DialogButton(g, "_leftButton") is { } cancel ? new StepTarget(cancel.Address, cancel.Path)
+        : StepTarget.Fail($"\"{InsufficientFansTitle}\" has no Cancel button"), WaitFor.DialogClosed);
+
+    private static FoundButton? DialogButton(GameReader g, string name) =>
+        new ButtonFinder(g.ManagedReader).FromCurrentScene()
+            .FirstOrDefault(b => b.CanTap && b.Path.StartsWith("Dialog[") && b.Path.EndsWith($"._currentDialogObj.{name}"));
 
     /// <summary>"Recreation: trainee" or "Recreation: &lt;friend name&gt;": open the picker, then tap that row.</summary>
     private static ActionPlan Recreation(string action, Func<int, string?> friendName)

@@ -21,6 +21,8 @@ internal static class AutoCommand
     public const string Usage = "usage: BlazeUma.Cli auto plan|run [--action \"Train Wit\"] [--yes] [--pid N] [--metadata PATH] [--master PATH]";
 
     private static readonly TimeSpan Poll = TimeSpan.FromMilliseconds(250);
+    /// <summary>Events answered in the same run after the action (e.g. a post-race event).</summary>
+    private const int MaxFollowUpEvents = 3;
 
     public static int Run(string[] args)
     {
@@ -51,59 +53,83 @@ internal static class AutoCommand
 
         using var reader = GameReader.Open(pid, metadata);
         using var data = MasterDatabase.Open(master ?? MasterDatabase.PathInGameDirectory(reader.GameDirectory));
-        var snapshot = reader.Snapshot();
-        var advice = new CareerAdvisor(data).Advise(snapshot);
-        Console.WriteLine(advice.Header);
-
-        if (action is null)
+        for (int round = 0; ; round++)
         {
-            if (RaceRunner.InProgress(reader.ManagedReader))
+            var snapshot = reader.Snapshot();
+            var advice = new CareerAdvisor(data).Advise(snapshot);
+            Console.WriteLine(advice.Header);
+
+            if (action is null)
             {
-                // Entry confirmation or race screens left open by a stopped run: finish that race.
-                action = ActionPlanner.GoalRace;
-                Console.WriteLine("A race is under way (entry confirmation, race screens or after-race popups).");
-            }
-            else if (advice.Situation == Situation.GoalRaceDay)
-            {
-                action = ActionPlanner.GoalRace;
-                Console.WriteLine($"Advisor: {advice.Summary}");
-            }
-            else if (advice.Situation != Situation.TrainingTurn || advice.Best is null)
-            {
-                Console.WriteLine($"Advisor: {advice.Summary}. Only home-screen actions are automated so far; do this one by hand.");
-                return 0;
+                if (RaceRunner.InProgress(reader.ManagedReader))
+                {
+                    // Entry confirmation or race screens left open by a stopped run: finish that race.
+                    action = ActionPlanner.GoalRace;
+                    Console.WriteLine("A race is under way (entry confirmation, race screens or after-race popups).");
+                }
+                else if (advice.Situation == Situation.GoalRaceDay)
+                {
+                    action = ActionPlanner.GoalRace;
+                    Console.WriteLine($"Advisor: {advice.Summary}");
+                }
+                else if (advice.Situation == Situation.Event && advice.Best is not null)
+                {
+                    action = advice.Best.Label;
+                    Console.WriteLine($"Advisor: {advice.Summary}");
+                }
+                else if (advice.Situation != Situation.TrainingTurn || advice.Best is null)
+                {
+                    Console.WriteLine($"Advisor: {advice.Summary}. Only home-screen actions are automated so far; do this one by hand.");
+                    return 0;
+                }
+                else if (round > 0)
+                {
+                    // Follow-ups only answer events; the next turn's action is a new run.
+                    Console.WriteLine($"Advisor: {advice.Summary}. Stopping here; run auto run again for this turn's action.");
+                    return 0;
+                }
+                else
+                {
+                    action = advice.Best.Label;
+                    Console.WriteLine($"Advisor pick: {action}");
+                }
             }
             else
             {
-                action = advice.Best.Label;
-                Console.WriteLine($"Advisor pick: {action}");
+                Console.WriteLine($"Requested: {action} (advisor would pick {advice.Best?.Label ?? advice.Summary})");
             }
-        }
-        else
-        {
-            Console.WriteLine($"Requested: {action} (advisor would pick {advice.Best?.Label ?? advice.Summary})");
-        }
 
-        var bonds = snapshot.Character?.Bonds ?? [];
-        var plan = ActionPlanner.For(action,
-            slot => bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null,
-            name => data.ProgramsForTurn(snapshot.Turn ?? 0)
-                .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.ProgramId);
-        if (plan.Unsupported is not null) { Console.WriteLine($"{action}: {plan.Unsupported}."); return 0; }
+            var bonds = snapshot.Character?.Bonds ?? [];
+            var plan = ActionPlanner.For(action,
+                slot => bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null,
+                name => data.ProgramsForTurn(snapshot.Turn ?? 0)
+                    .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.ProgramId);
+            if (plan.Unsupported is not null) { Console.WriteLine($"{action}: {plan.Unsupported}."); return 0; }
 
-        var r = reader.ManagedReader;
-        for (int i = 0; i < plan.Steps.Count && !(plan.RunsRace && RaceRunner.InProgress(r)); i++)
-        {
-            string target = i == 0 || resolveAll ? Describe(plan.Steps[i].Resolve(reader)) : "(found on screen when it runs)";
-            Console.WriteLine($"  {i + 1}. {plan.Steps[i].Description}  {target}");
+            var r = reader.ManagedReader;
+            for (int i = 0; i < plan.Steps.Count && !(plan.RunsRace && RaceRunner.InProgress(r)); i++)
+            {
+                string target = i == 0 || resolveAll ? Describe(plan.Steps[i].Resolve(reader)) : "(found on screen when it runs)";
+                Console.WriteLine($"  {i + 1}. {plan.Steps[i].Description}  {target}");
+            }
+            Console.WriteLine(plan.RunsRace
+                ? "  then: confirm entry, View Results, skip the result scenes and popups, until home on the next turn"
+                : plan.IsEvent ? "  then: wait for the event to finish (the turn's action is a separate run)"
+                : "  then: pick from any dialog that opens, until the turn advances");
+            if (!execute) return 0;
+
+            if (round == 0) Console.WriteLine(ButtonTapper.EnsureAgent(reader.ProcessId));
+            int result = Execute(reader, plan, snapshot.Turn ?? 0, yes);
+            // An event right after an action (after a race, on the next turn) is part of finishing it.
+            if (result == 0 && round < MaxFollowUpEvents && EventShowing(reader))
+            {
+                Console.WriteLine();
+                Console.WriteLine("An event followed; answering it.");
+                action = null;
+                continue;
+            }
+            return result;
         }
-        Console.WriteLine(plan.RunsRace
-            ? "  then: confirm entry, View Results, skip the result scenes and popups, until home on the next turn"
-            : "  then: pick from any dialog that opens, until the turn advances");
-        if (!execute) return 0;
-
-        Console.WriteLine(ButtonTapper.EnsureAgent(reader.ProcessId));
-        return Execute(reader, plan, snapshot.Turn ?? 0, yes);
     }
 
     private static string Describe(StepTarget t) =>
@@ -138,12 +164,14 @@ internal static class AutoCommand
                 case 'q': Console.WriteLine("Stopped. Nothing else was tapped."); return 0;
                 case 's': Console.WriteLine("Skipped."); continue;
             }
-            string reply = tapper.Tap(target.Button);
+            string reply = target.Method is { } m
+                ? tapper.Invoke(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..])
+                : tapper.Tap(target.Button);
             if (!reply.StartsWith("ok")) { Console.WriteLine($"Tap failed: {reply}"); return 1; }
 
             string result = WaitAfter(reader, step, startTurn);
             Console.WriteLine($"   {result}");
-            if (TurnNow(reader) > startTurn || EventShowing(reader)) return Finish(reader, startTurn);
+            if (TurnNow(reader) > startTurn || (!plan.IsEvent && EventShowing(reader))) return Finish(reader, startTurn);
         }
 
         if (plan.RunsRace && (resume || TurnNow(reader) <= startTurn))
@@ -202,6 +230,8 @@ internal static class AutoCommand
             WaitFor.RaceSelected => WaitUntil(() => RaceEntryScreen.Read(r) is { } list && list.SelectedProgramId ==
                     (step.CommandId != 0 ? step.CommandId : list.Rows.FirstOrDefault(x => x.IsGoal && x.EntryState == 0)?.ProgramId),
                 TimeSpan.FromSeconds(5), "race selected", "race did not become selected"),
+            WaitFor.DialogClosed => WaitUntil(() => DialogButtons(r).Count == 0, TimeSpan.FromSeconds(5), "popup closed", "popup still open"),
+            WaitFor.EventDone => WaitUntil(() => !EventShowing(reader), TimeSpan.FromSeconds(60), "event answered", "event still showing after 60 s"),
             WaitFor.LeftRaceList => WaitUntil(() => RaceEntryScreen.Read(r) is null || DialogButtons(r).Count > 0,
                 TimeSpan.FromSeconds(10), "left the race list", "still on the race list"),
             _ => "done",
