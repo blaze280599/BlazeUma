@@ -72,9 +72,10 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
     }
 
     /// <summary>
-    /// Bond worth of training next to a partner. Deck cards (positions 1–6) build toward friendship
-    /// trainings at 80 bond; scenario NPCs (ids above 100, e.g. Director Akikawa) never give friendship
-    /// trainings, so their bond counts half. The stat gains already include any partner bonus.
+    /// Bond worth of training next to a partner. Stat cards (positions 1–6) build toward friendship trainings
+    /// at 80 bond (<see cref="ValueModel.BondTrainingValue"/>); friend cards and scenario NPCs (ids above 100,
+    /// e.g. Director Akikawa) never give friendship trainings, so they keep a flat estimate, NPCs at half. The
+    /// stat gains already include any partner bonus.
     /// </summary>
     private (double Value, string Label) PartnerValue(TrainingPartner partner, int trainingId)
     {
@@ -84,12 +85,16 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         string name = bond is not null ? ctx.Data.CharacterName(bond.CharaId) ?? $"#{partner.Position}" : $"#{partner.Position}";
         bool isCard = partner.Position is >= 1 and <= 6;
         var card = isCard ? ctx.Character.Deck.FirstOrDefault(d => d.Position == partner.Position) : null;
-        bool friendship = card is not null && level >= ValueModel.FriendshipBond
-            && ctx.Data.SupportCard(card.SupportCardId)?.TrainingCommandId == trainingId;
+        var info = card is not null ? ctx.Data.SupportCard(card.SupportCardId) : null;
+        bool friendship = info is not null && level >= ValueModel.FriendshipBond && info.TrainingCommandId == trainingId;
 
+        // Stat cards: bond is worth the friendship trainings it brings forward, from the card's own Friendship
+        // Bonus and Specialty Priority. Friend/group cards and NPCs give no friendship trainings: flat estimate.
         double value = 0;
         if (level < ValueModel.FriendshipBond)
-            value += ValueModel.BondValuePerPartner * Math.Clamp(1 - ctx.Turn / 48.0, 0.2, 1) * (isCard ? 1 : 0.5);
+            value += info is { TrainingCommandId: > 0 } && ctx.Data.SupportCardEffects(card!.SupportCardId, card.LimitBreak) is { } effects
+                ? values.BondTrainingValue(level, info.TrainingCommandId, effects)
+                : ValueModel.BondValuePerPartner * Math.Clamp(1 - ctx.Turn / 48.0, 0.2, 1) * (isCard ? 1 : 0.5);
         if (partner.HasHint) value += ValueModel.HintValue;
 
         string label = $"{name} {level}" + (friendship ? " friendship!" : "") + (partner.HasHint ? " hint" : "");

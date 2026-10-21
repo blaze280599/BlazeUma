@@ -51,6 +51,13 @@ internal sealed class FakeGameData : IGameData
         10002 => new SupportCardInfo(10002, "[Tracen Academy] Silence Suzuka", 1002, 1, 101),
         _ => null,
     };
+    /// <summary>Real master.mdb values at limit break 0: Tanino Gimlet SSR level 30, Silence Suzuka R level 20.</summary>
+    public SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak) => supportCardId switch
+    {
+        30145 => new SupportCardEffects(30, 20, 0),
+        10002 => new SupportCardEffects(20, 15, 35),
+        _ => null,
+    };
     public ConditionInfo? Condition(int conditionId) => conditionId switch
     {
         6 => new ConditionInfo(6, "Practice Poor", true),

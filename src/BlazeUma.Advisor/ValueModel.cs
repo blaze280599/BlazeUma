@@ -128,6 +128,57 @@ public sealed class ValueModel
         return applicable * perLevel;
     }
 
+    /// <summary>URA level-3 base gains per training (uma.guide Career Mechanics), before multipliers.</summary>
+    private static readonly IReadOnlyDictionary<int, (int Param, int Amount)[]> BaseTraining = new Dictionary<int, (int, int)[]>
+    {
+        [TrainingIds.Speed] = [(ParamIds.Speed, 13), (ParamIds.Power, 6), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Stamina] = [(ParamIds.Stamina, 12), (ParamIds.Guts, 6), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Power] = [(ParamIds.Stamina, 6), (ParamIds.Power, 11), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Guts] = [(ParamIds.Speed, 5), (ParamIds.Power, 5), (ParamIds.Guts, 10), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Wit] = [(ParamIds.Speed, 2), (ParamIds.Wit, 12), (ParamIds.SkillPoints, 5)],
+    };
+
+    /// <summary>Mood, other cards' training effectiveness, partner count and growth on a typical training.</summary>
+    public const double TypicalTrainingMultiplier = 1.4;
+    /// <summary>Bond from one training with a card (without Charming).</summary>
+    public const int BondPerTraining = 7;
+    /// <summary>Turns between trainings with a given card when not chasing it: it is on the picked training ~1 in 4.</summary>
+    public const double TurnsPerBondTraining = 4;
+    /// <summary>Share of turns that are trainings (the rest are races, rests and recreation).</summary>
+    public const double TrainingTurnShare = 0.7;
+    /// <summary>Chance a friendship training on offer is the one picked (other friendship trainings, races, rests compete).</summary>
+    public const double FriendshipPickRate = 0.6;
+
+    /// <summary>
+    /// Extra value of one friendship training with a card over the same training without it: the training's
+    /// gains times the card's Friendship Bonus (training formula: gains × Π(1 + FB/100)).
+    /// </summary>
+    public double FriendshipTrainingExtra(int trainingId, int friendshipBonus) =>
+        BaseTraining.TryGetValue(trainingId, out var gains)
+            ? gains.Sum(g => Param(g.Param, g.Amount)) * TypicalTrainingMultiplier * friendshipBonus / 100.0
+            : 0;
+
+    /// <summary>
+    /// Community approximation of how often a card stands on its specialty training: weight 100 + Specialty
+    /// Priority there against 100 for each other training and 50 for not showing up.
+    /// </summary>
+    public static double SpecialtyChance(int specialtyPriority) => (100.0 + specialtyPriority) / (550 + specialtyPriority);
+
+    /// <summary>
+    /// Worth of one training's bond with a stat card below friendship. Each bond training brings the card's
+    /// friendship trainings about <see cref="TurnsPerBondTraining"/> turns sooner, worth that many turns of
+    /// friendship trainings — or nothing if friendship would not be reached before the career ends.
+    /// </summary>
+    public double BondTrainingValue(int bond, int specialtyTrainingId, SupportCardEffects effects)
+    {
+        if (bond >= FriendshipBond) return 0;
+        int trainingsLeft = (int)Math.Ceiling((FriendshipBond - bond) / (double)BondPerTraining);
+        double turnsWithFriendship = _ctx.TurnsLeft - trainingsLeft * TurnsPerBondTraining;
+        double turnsGained = Math.Clamp(turnsWithFriendship, 0, TurnsPerBondTraining);
+        return turnsGained * TrainingTurnShare * SpecialtyChance(effects.SpecialtyPriority) * FriendshipPickRate
+            * FriendshipTrainingExtra(specialtyTrainingId, effects.FriendshipBonus);
+    }
+
     /// <summary>What a failed training costs on top of losing its gains: stat −5, mood −1, chance of Practice Poor.</summary>
     public double FailureLoss => 5 * AverageStatWeight + Math.Abs(Mood(-1)) + 4;
 }

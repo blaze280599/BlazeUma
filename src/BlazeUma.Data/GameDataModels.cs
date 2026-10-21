@@ -69,6 +69,12 @@ public sealed record SkillInfo(
 /// <summary>support_card_type: 1 = stat card, 2 = friend, 3 = group. TrainingCommandId is the card's specialty (101 …).</summary>
 public sealed record SupportCardInfo(int Id, string Name, int CharaId, int Type, int TrainingCommandId);
 
+/// <summary>
+/// A support card's effects at the max level of its limit break (support_card_effect_table plus a unique
+/// effect once its level is reached). Values are percentages / weights as shown in game.
+/// </summary>
+public sealed record SupportCardEffects(int Level, int FriendshipBonus, int SpecialtyPriority);
+
 /// <summary>single_mode_chara_effect: good (effect_type 1) or bad (effect_type 2) condition.</summary>
 public sealed record ConditionInfo(int Id, string Name, bool IsBad);
 
@@ -87,6 +93,8 @@ public interface IGameData
     /// <summary>Skills the trainee can learn without hints (available_skill_set, gated by awakening level).</summary>
     IReadOnlyList<int> BaseSkillIds(int cardId, int talentLevel);
     SupportCardInfo? SupportCard(int supportCardId);
+    /// <summary>Effects at the max level for <paramref name="limitBreak"/> (0–4); the card's actual level is not read.</summary>
+    SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak);
     ConditionInfo? Condition(int conditionId);
     string? StoryTitle(int storyId);
     string? CharacterName(int charaId);

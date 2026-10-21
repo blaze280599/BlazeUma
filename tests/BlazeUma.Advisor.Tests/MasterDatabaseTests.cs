@@ -37,6 +37,17 @@ public sealed class MasterDatabaseTests : IDisposable
     }
 
     [Fact]
+    public void SupportCardEffects_FollowLimitBreakLevel_AndUniqueEffect()
+    {
+        if (_db is null) return;
+        Assert.Equal(new SupportCardEffects(20, 15, 35), _db.SupportCardEffects(10002, 0));   // R, level 20
+        Assert.Equal(new SupportCardEffects(40, 20, 50), _db.SupportCardEffects(10002, 4));   // R, level 40
+        Assert.Equal(new SupportCardEffects(30, 20, 0), _db.SupportCardEffects(30145, 0));    // SSR, level 30
+        Assert.Equal(new SupportCardEffects(25, 35, 35), _db.SupportCardEffects(20003, 0));   // SR: 25 + unique 10 at level 25
+        Assert.Equal(new SupportCardEffects(45, 40, 50), _db.SupportCardEffects(20003, 4));
+    }
+
+    [Fact]
     public void UraFinale_IsOnlyOfferedInTheFinalePeriod()
     {
         if (_db is null) return;

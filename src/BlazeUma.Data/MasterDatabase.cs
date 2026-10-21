@@ -164,6 +164,42 @@ public sealed class MasterDatabase : IGameData, IDisposable
                 r.GetInt32(1), r.GetInt32(2), r.GetInt32(3)),
             ("$id", supportCardId)).FirstOrDefault();
 
+    private const int EffectFriendshipBonus = 1, EffectSpecialtyPriority = 19;
+
+    /// <summary>Levels of the effect table's columns after init (level 1): limit_lv5 … limit_lv50.</summary>
+    private static readonly int[] EffectColumnLevels = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+
+    public SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak)
+    {
+        var card = Query("""
+            select d.effect_table_id, d.unique_effect_id,
+                   case $lb when 0 then l.limit_0 when 1 then l.limit_1 when 2 then l.limit_2 when 3 then l.limit_3 else l.limit_4 end
+            from support_card_data d join support_card_limit l on l.rarity = d.rarity where d.id = $id
+            """, r => (Table: r.GetInt32(0), Unique: r.GetInt32(1), Level: r.GetInt32(2)),
+            ("$id", supportCardId), ("$lb", Math.Clamp(limitBreak, 0, 4))).FirstOrDefault();
+        if (card == default) return null;
+
+        // Each column holds the value from that level on; -1 means unchanged from the previous column.
+        var effects = new Dictionary<int, int>();
+        foreach (var (type, values) in Query("select * from support_card_effect_table where id = $t",
+                     r => (r.GetInt32(1), Enumerable.Range(2, 11).Select(r.GetInt32).ToArray()), ("$t", card.Table)))
+        {
+            int value = Math.Max(0, values[0]);
+            for (int i = 0; i < EffectColumnLevels.Length && EffectColumnLevels[i] <= card.Level; i++)
+                if (values[i + 1] >= 0) value = values[i + 1];
+            effects[type] = value;
+        }
+        foreach (var (lv, type0, value0, type1, value1) in Query(
+                     "select lv, type_0, value_0, type_1, value_1 from support_card_unique_effect where id = $u",
+                     r => (r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4)), ("$u", card.Unique)))
+        {
+            if (card.Level < lv) continue;
+            effects[type0] = effects.GetValueOrDefault(type0) + value0;
+            effects[type1] = effects.GetValueOrDefault(type1) + value1;
+        }
+        return new SupportCardEffects(card.Level, effects.GetValueOrDefault(EffectFriendshipBonus), effects.GetValueOrDefault(EffectSpecialtyPriority));
+    }
+
     public ConditionInfo? Condition(int conditionId) =>
         Query("select id, effect_type from single_mode_chara_effect where id = $id",
             r => new ConditionInfo(r.GetInt32(0), Text(TextCondition, r.GetInt32(0)) ?? $"condition {r.GetInt32(0)}", r.GetInt32(1) == 2),

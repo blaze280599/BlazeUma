@@ -171,13 +171,14 @@ public class TrainingPartnerTests
     }
 
     [Fact]
-    public void NpcBond_CountsHalfOfACardsBond()
+    public void CardBond_IsDerivedFromTheCard_AndNpcBondKeepsHalfTheFlatEstimate()
     {
         double alone = Score(TrainingIds.Speed).Score;
         double card = Score(TrainingIds.Speed, 1).Score - alone;    // Tanino Gimlet, bond 20
         double npc = Score(TrainingIds.Speed, 102).Score - alone;   // Director Akikawa, bond 16
-        Assert.True(card > 0);
-        Assert.Equal(card / 2, npc, 3);
+        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa()), new FakeGameData());
+        Assert.Equal(new ValueModel(ctx).BondTrainingValue(20, TrainingIds.Power, new SupportCardEffects(30, 20, 0)), card, 3);
+        Assert.Equal(ValueModel.BondValuePerPartner * (1 - 14 / 48.0) * 0.5, npc, 3);
     }
 
     [Fact]
@@ -389,5 +390,38 @@ public class UmaGuideRuleTests
         var all20 = new List<EventEffect> { new(13, 20, 0, 0) };
         var choices = Enumerable.Range(1, 5).Select(i => new EventChoice(i, [i == 1 ? all20 : [Param(ParamIds.Energy, 10)]])).ToList();
         Assert.Equal("Bottom choice", Advise(30, 50, choices, 720).Best!.Label);
+    }
+}
+
+public class BondValueTests
+{
+    private static ValueModel Model(int turn = 14) =>
+        new(new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(), turn: turn), new FakeGameData()));
+
+    private static readonly SupportCardEffects Typical = new(50, 25, 50);
+
+    [Fact]
+    public void HigherFriendshipBonus_AndSpecialtyPriority_AreWorthMore()
+    {
+        var model = Model();
+        double typical = model.BondTrainingValue(20, TrainingIds.Speed, Typical);
+        Assert.True(model.BondTrainingValue(20, TrainingIds.Speed, Typical with { FriendshipBonus = 35 }) > typical);
+        Assert.True(model.BondTrainingValue(20, TrainingIds.Speed, Typical with { SpecialtyPriority = 100 }) > typical);
+        Assert.InRange(typical, 1, 10);   // same scale as the flat 3 it replaces
+    }
+
+    [Fact]
+    public void CardOnAWantedStat_IsWorthMoreThanOneOnAnUnwantedStat()
+    {
+        var model = Model();
+        Assert.True(model.BondTrainingValue(20, TrainingIds.Speed, Typical) > model.BondTrainingValue(20, TrainingIds.Guts, Typical));
+    }
+
+    [Fact]
+    public void NoValue_AtFriendship_OrWhenItCannotBeReachedInTime()
+    {
+        Assert.Equal(0, Model().BondTrainingValue(80, TrainingIds.Speed, Typical));
+        Assert.Equal(0, Model(turn: 70).BondTrainingValue(0, TrainingIds.Speed, Typical));
+        Assert.True(Model(turn: 70).BondTrainingValue(76, TrainingIds.Speed, Typical) > 0);
     }
 }
