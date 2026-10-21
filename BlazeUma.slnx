@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BlazeUma.Cli/BlazeUma.Cli.csproj" />
+    <Project Path="src/BlazeUma.Memory/BlazeUma.Memory.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BlazeUma.Memory.Tests/BlazeUma.Memory.Tests.csproj" />
+  </Folder>
+</Solution>

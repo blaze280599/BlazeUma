@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+__pycache__/
+*.pyc
+# Game data copies and dumps are proprietary and machine-specific
+*.mdb
+dumps/
