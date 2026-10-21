@@ -291,3 +291,103 @@ public class SkillAdvisorTests
         Assert.Contains(buy, b => b.Skill.Name == "Preferred Position");   // pace chaser, any distance
     }
 }
+
+/// <summary>Rules taken from uma.guide: 1400-cap targets, summer camp, Happy Meek, recurring events.</summary>
+public class UmaGuideRuleTests
+{
+    private static CareerContext Context(int turn = 14, int energy = 50, Mood mood = Mood.Normal, IReadOnlyList<Command>? commands = null,
+        StoryEvent? story = null, IReadOnlyList<EventChoice>? choices = null) =>
+        new(Snapshots.Snapshot(Snapshots.Daiwa(energy, mood), turn: turn, commands: commands, story: story, choices: choices), new FakeGameData());
+
+    private static Advice Advise(int turn, int energy, IReadOnlyList<EventChoice> choices, int eventKey) =>
+        new CareerAdvisor(new FakeGameData()).Advise(Snapshots.Snapshot(Snapshots.Daiwa(energy), turn: turn,
+            story: new StoryEvent(501_009_000 + eventKey, 1, 1009, 0, 1, LooksActive: true), choices: choices));
+
+    [Fact]
+    public void Targets_CapSpeed_AndRaisePowerAndWit()
+    {
+        var target = new ValueModel(Context()).Targets.Target;
+        Assert.Equal(1404, target.Speed);
+        Assert.Equal(900, target.Power);   // pace chaser
+        Assert.Equal(1000, target.Wit);
+    }
+
+    [Fact]
+    public void SummerCamp_IsFoundFromTheCalendar()
+    {
+        Assert.True(Context(turn: 37).InSummerCamp);
+        Assert.False(Context(turn: 36).InSummerCamp);
+        Assert.Equal(2, Context(turn: 35).TurnsUntilSummerCamp);
+        Assert.Null(Context(turn: 38).TurnsUntilSummerCamp);
+        Assert.Equal(61 - 41, Context(turn: 41).TurnsUntilSummerCamp);
+    }
+
+    [Fact]
+    public void EnergyBeforeCamp_IsWorthMore()
+    {
+        Assert.True(new ValueModel(Context(turn: 36, energy: 70)).Energy(20) > new ValueModel(Context(turn: 30, energy: 70)).Energy(20));
+    }
+
+    [Fact]
+    public void RestInCamp_IsRestAndRecreation()
+    {
+        var rest = Rank(Context(turn: 38, energy: 40, mood: Mood.Bad)).Single(o => o.Label == "Rest");
+        var normal = Rank(Context(turn: 30, energy: 40, mood: Mood.Bad)).Single(o => o.Label == "Rest");
+        Assert.Contains("Rest & Recreation", rest.Reasons[0]);
+        Assert.True(rest.Score > normal.Score);
+    }
+
+    private static IReadOnlyList<ScoredOption> Rank(CareerContext ctx) => new TurnAdvisor(ctx, new ValueModel(ctx)).Rank();
+
+    private static double SpeedWith(int turn, params int[] partners)
+    {
+        var command = Snapshots.Train(TrainingIds.Speed, 0, -20, ("speed", 10)) with
+        {
+            Partners = partners.Select(p => new TrainingPartner(p, false)).ToList(),
+        };
+        return Rank(Context(turn: turn, commands: [command])).Single().Score;
+    }
+
+    [Fact]
+    public void HappyMeek_AddsDuelValue_ButNotInCamp()
+    {
+        Assert.InRange(SpeedWith(30, TurnAdvisor.HappyMeekPosition) - SpeedWith(30), 5, 20);
+        Assert.Equal(SpeedWith(38), SpeedWith(38, TurnAdvisor.HappyMeekPosition), 3);
+    }
+
+    private static EventEffect Param(int param, int amount) => new(1, param, amount, 0);
+
+    private static readonly IReadOnlyList<EventChoice> ClassicNewYear =
+    [
+        new(1, [[Param(ParamIds.Speed, 10)]]),
+        new(2, [[Param(ParamIds.Energy, 20)]]),
+        new(3, [[Param(ParamIds.SkillPoints, 20)]]),
+    ];
+
+    [Theory]
+    [InlineData(25, 60, "Bottom choice")]        // Classic: energy fits
+    [InlineData(25, 90, "Choice 3")]        // Classic: energy would overflow → SP
+    [InlineData(49, 70, "Choice 3")]        // Senior: Raffle next turn → SP
+    [InlineData(49, 30, "Bottom choice")]        // Senior: too low to train
+    public void NewYear_FollowsTheGuide(int turn, int energy, string expected)
+    {
+        Assert.Equal(expected, Advise(turn, energy, ClassicNewYear, 101).Best!.Label);
+    }
+
+    [Fact]
+    public void ClassicSummerEvent_PicksPower()
+    {
+        var choices = new List<EventChoice> { new(1, [[Param(ParamIds.Guts, 10)]]), new(2, [[Param(ParamIds.Power, 10)]]) };
+        var best = Advise(38, 50, choices, 104).Best!;
+        Assert.Equal("Bottom choice", best.Label);
+        Assert.StartsWith("uma.guide", best.Reasons[0]);
+    }
+
+    [Fact]
+    public void Acupuncturist_TakesWinningChakra()
+    {
+        var all20 = new List<EventEffect> { new(13, 20, 0, 0) };
+        var choices = Enumerable.Range(1, 5).Select(i => new EventChoice(i, [i == 1 ? all20 : [Param(ParamIds.Energy, 10)]])).ToList();
+        Assert.Equal("Bottom choice", Advise(30, 50, choices, 720).Best!.Label);
+    }
+}

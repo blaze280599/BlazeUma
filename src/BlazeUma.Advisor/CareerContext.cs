@@ -71,6 +71,33 @@ public sealed class CareerContext
 
     public bool IsGoalTurn(int turn) => Goals.Any(g => g.Turn == turn);
 
+    /// <summary>Summer camp: Early July to Late August of the Classic and Senior years; every facility is level 5.</summary>
+    public bool IsSummerCamp(int turn) =>
+        turn is >= 1 and <= LastSeniorTurn && Data.Turn(turn) is { Year: 2 or 3, Month: 7 or 8 };
+
+    private const int LastSeniorTurn = 72;
+
+    public bool InSummerCamp => _inSummerCamp ??= IsSummerCamp(Turn);
+    private bool? _inSummerCamp;
+
+    /// <summary>Turns until the next summer camp starts (1 = next turn), or null when none is ahead or one is running.</summary>
+    public int? TurnsUntilSummerCamp
+    {
+        get
+        {
+            if (!_turnsUntilCampKnown)
+            {
+                _turnsUntilCampKnown = true;
+                if (!InSummerCamp)
+                    for (int t = Turn + 1; t <= LastSeniorTurn && _turnsUntilCamp is null; t++)
+                        if (IsSummerCamp(t)) _turnsUntilCamp = t - Turn;
+            }
+            return _turnsUntilCamp;
+        }
+    }
+    private int? _turnsUntilCamp;
+    private bool _turnsUntilCampKnown;
+
     public int Aptitude(DistanceCategory category) => category switch
     {
         DistanceCategory.Sprint => Character.Aptitudes.Sprint,

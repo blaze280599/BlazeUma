@@ -40,17 +40,61 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values)
             if (p is null && choice.Outcomes.Count > 1) reasons.Add("odds unknown; outcomes weighted equally");
             options.Add(new ScoredOption(choice.Choice == 1 ? "Top choice" : choice.Choice == 2 ? "Bottom choice" : $"Choice {choice.Choice}", expected, reasons));
         }
+
+        // Recurring scenario events with a known best answer override the preview estimate.
+        if (story is not null && story.StoryId / 1_000_000 == 501 && KnownAnswer(story.StoryId % 1000, choices) is var (pick, why))
+        {
+            int i = choices.ToList().FindIndex(c => c.Choice == pick);
+            if (i >= 0)
+            {
+                double top = options.Max(o => o.Score);
+                options[i] = options[i] with { Score = Math.Max(options[i].Score, top + 1), Reasons = [$"uma.guide: {why}", .. options[i].Reasons] };
+            }
+        }
         return options.OrderByDescending(o => o.Score).ToList();
+    }
+
+    private const int NewYearResolutions = 101, NewYearShrine = 102, SummerCampYear2 = 104, Acupuncturist = 720;
+
+    /// <summary>
+    /// uma.guide's recommendation for a recurring trainee event (keyed like <see cref="TraineeEventOdds"/>), or
+    /// null to keep the preview estimate. Choices are found by their preview effects where possible, so the
+    /// rule holds whichever order the game lists them in.
+    /// </summary>
+    private (int Choice, string Why)? KnownAnswer(int eventKey, IReadOnlyList<EventChoice> choices)
+    {
+        var c = ctx.Character;
+        int? Giving(int param) => choices.FirstOrDefault(ch => ch.Outcomes.Count > 0
+            && ch.Outcomes[0].Any(e => e.DisplayId is 1 or 39 && e.Value0 == param))?.Choice;
+
+        switch (eventKey)
+        {
+            case NewYearResolutions or NewYearShrine when Giving(ParamIds.Energy) is int energy && Giving(ParamIds.SkillPoints) is int sp:
+            {
+                // Classic: energy unless it would overflow. Senior: the Raffle next turn restores energy, so
+                // skill points unless energy is too low to train next turn.
+                int gain = choices.First(ch => ch.Choice == energy).Outcomes[0]
+                    .First(e => e.DisplayId is 1 or 39 && e.Value0 == ParamIds.Energy).Value1;
+                bool takeEnergy = ctx.Date.Year == 2 ? c.Energy + gain <= c.MaxEnergy : c.Energy < 50;
+                return takeEnergy
+                    ? (energy, ctx.Date.Year == 2 ? "New Year: take energy while it doesn't overflow" : "New Year: energy too low to train next turn")
+                    : (sp, ctx.Date.Year == 2 ? "New Year: energy would overflow, take skill points" : "New Year: Raffle restores energy next turn, take skill points");
+            }
+            case SummerCampYear2 when Giving(ParamIds.Power) is int power:
+                return (power, "Classic summer camp: Power over Guts");
+            case Acupuncturist when choices.Count == 5:
+                // Strength, Winning, Health, Charm, Quit. Strength (~30%) is never worth the risk; Charm only for
+                // its Charming condition at the very start; Winning (two recovery skills, ~50%) is usually best.
+                return ctx.Turn <= 2 ? (4, "Acupuncturist: Charm Chakra this early, for Charming")
+                    : (2, "Acupuncturist: Winning Chakra (recovery skills) is usually best");
+        }
+        return null;
     }
 
     /// <summary>Text and value of one preview line; display ids and slots per single_mode_event_choice_reward / text 394.</summary>
     public (string Text, double Value) Describe(EventEffect e)
     {
-        int lastStat = ctx.Snapshot.LastTrainingId switch
-        {
-            TrainingIds.Speed => ParamIds.Speed, TrainingIds.Stamina => ParamIds.Stamina, TrainingIds.Power => ParamIds.Power,
-            TrainingIds.Guts => ParamIds.Guts, TrainingIds.Wit => ParamIds.Wit, _ => 0,
-        };
+        int lastStat = TurnAdvisor.TrainingStat(ctx.Snapshot.LastTrainingId ?? 0);
         double lastWeight = lastStat != 0 ? values.Weight(lastStat) : values.AverageStatWeight;
         string Cond(int id) => ctx.Data.Condition(id)?.Name ?? $"condition {id}";
         string Card(int id) => ctx.Data.CharacterName(id) ?? $"#{id}";

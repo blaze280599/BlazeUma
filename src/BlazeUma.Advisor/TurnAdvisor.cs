@@ -78,6 +78,7 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
     /// </summary>
     private (double Value, string Label) PartnerValue(TrainingPartner partner, int trainingId)
     {
+        if (partner.Position == HappyMeekPosition) return HappyMeek(trainingId);
         var bond = ctx.Character.Bonds.FirstOrDefault(b => b.TargetId == partner.Position);
         int level = bond?.Value ?? 0;
         string name = bond is not null ? ctx.Data.CharacterName(bond.CharaId) ?? $"#{partner.Position}" : $"#{partner.Position}";
@@ -95,10 +96,50 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         return (value, label);
     }
 
+    /// <summary>Happy Meek's partner position (chara 2001) on URA trainings since the July patch.</summary>
+    public const int HappyMeekPosition = 2001;
+
+    /// <summary>
+    /// Happy Meek on a training may challenge the trainee to a contest after it succeeds (never in summer camp).
+    /// Win: +10–20 to the stat, +4 to its cap, +30 SP, and a step toward the 5 wins that double the URA Finale
+    /// reward; loss: +5 stat, +15 SP (uma.guide). Neither the duel chance nor the win chance is read from the
+    /// game, so both are assumed even; the contest stat is taken to be the training's own (the top choice).
+    /// </summary>
+    private (double Value, string Label) HappyMeek(int trainingId)
+    {
+        if (ctx.InSummerCamp) return (0, "Happy Meek (no duels in camp)");
+        const double DuelChance = 0.5, WinChance = 0.5, FinaleStep = 5;
+        double weight = values.Weight(TrainingStat(trainingId));
+        double win = 15 * weight + 30 * ValueModel.SkillPointValue + FinaleStep;
+        double loss = 5 * weight + 15 * ValueModel.SkillPointValue;
+        return (DuelChance * (WinChance * win + (1 - WinChance) * loss), "Happy Meek duel?");
+    }
+
+    public static int TrainingStat(int trainingId) => trainingId switch
+    {
+        TrainingIds.Speed => ParamIds.Speed, TrainingIds.Stamina => ParamIds.Stamina, TrainingIds.Power => ParamIds.Power,
+        TrainingIds.Guts => ParamIds.Guts, TrainingIds.Wit => ParamIds.Wit, _ => 0,
+    };
+
     private ScoredOption Rest()
     {
+        if (ctx.InSummerCamp) return RestAndRecreation();
         double v = values.Energy(ValueModel.ExpectedRestEnergy);
         return new ScoredOption("Rest", v, [$"energy {ctx.Character.Energy} +~{ValueModel.ExpectedRestEnergy} ({v:+0.0})"]);
+    }
+
+    /// <summary>Summer camp's Rest: +40 energy, +1 mood and cures all general bad conditions (uma.guide).</summary>
+    private ScoredOption RestAndRecreation()
+    {
+        double energy = values.Energy(40), mood = values.Mood(1);
+        var bad = ctx.Character.Conditions.Select(ctx.Data.Condition).Where(c => c is { IsBad: true }).ToList();
+        var reasons = new List<string>
+        {
+            $"summer camp Rest & Recreation: energy {ctx.Character.Energy} +40 ({energy:+0.0})",
+            $"mood {ctx.Character.Mood} +1 ({mood:+0.0})",
+        };
+        if (bad.Count > 0) reasons.Add($"cures {string.Join(", ", bad.Select(c => c!.Name))} (+{25 * bad.Count})");
+        return new ScoredOption("Rest", energy + mood + 25 * bad.Count, reasons);
     }
 
     /// <summary>Friend outings: chain events (5 steps) usually add stats or hints; estimated, not measured.</summary>

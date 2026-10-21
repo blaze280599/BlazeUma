@@ -26,7 +26,8 @@ internal sealed class FakeGameData : IGameData
         new SkillInfo(200012, "Sprint Thing", 1, 20001, 217, 110, "distance_type==1", 27),
     }.ToDictionary(s => s.Id);
 
-    public TurnDate Turn(int turn) => new(turn, turn <= 24 ? 1 : turn <= 48 ? 2 : 3, 7, 1);
+    /// <summary>URA calendar: 24 half-months per year from Junior Early January (summer camp = turns 37–40, 61–64).</summary>
+    public TurnDate Turn(int turn) => new(turn, (turn - 1) / 24 + 1, (turn - 1) % 24 / 2 + 1, (turn - 1) % 2 + 1);
 
     public IReadOnlyList<GoalRace> Goals(IReadOnlyList<int> routeRaceIds) =>
     [

@@ -38,16 +38,20 @@ public sealed class ValueModel
     /// <summary>Stamina a race distance needs by the end of the career (≈ 480 at 1600 m, 780 at 2500 m).</summary>
     public static int StaminaFor(int distance) => (int)Math.Clamp(350 + (distance - 1200) * 0.33, 300, 1100);
 
+    /// <summary>
+    /// Targets follow uma.guide's stat priority for the 1400-cap URA (July patch): Speed capped, enough Stamina
+    /// for the longest goal, Power ~800–1000 (closers need more acceleration), Wit as high as possible, Guts optional.
+    /// </summary>
     private static StatTargets PlanTargets(CareerContext ctx)
     {
         var c = ctx.Character;
         bool front = ctx.Style is RunningStyle.FrontRunner or RunningStyle.PaceChaser;
         var target = new Stats(
-            Speed: Math.Min(1100, c.MaxStats.Speed),
+            Speed: c.MaxStats.Speed,
             Stamina: Math.Min(StaminaFor(ctx.LongestRemainingDistance), c.MaxStats.Stamina),
-            Power: Math.Min(front ? 750 : 800, c.MaxStats.Power),
+            Power: Math.Min(front ? 900 : 1000, c.MaxStats.Power),
             Guts: Math.Min(350, c.MaxStats.Guts),
-            Wit: Math.Min(front ? 650 : 600, c.MaxStats.Wit));
+            Wit: Math.Min(1000, c.MaxStats.Wit));
 
         var weights = new Dictionary<int, double>();
         foreach (int stat in new[] { ParamIds.Speed, ParamIds.Stamina, ParamIds.Power, ParamIds.Guts, ParamIds.Wit })
@@ -89,14 +93,17 @@ public sealed class ValueModel
 
     /// <summary>
     /// Value of an energy change from the current level. Energy is worth more the lower it is (failure risk and
-    /// lost turns), and gains above max energy are wasted.
+    /// lost turns), and gains above max energy are wasted. In the two turns before summer camp, energy carried
+    /// in is spent on level-5 trainings, so the upper bands are worth more (uma.guide: enter camp with high energy).
     /// </summary>
     public double Energy(double delta, double? from = null)
     {
         double start = from ?? _ctx.Character.Energy;
         double end = Math.Clamp(start + delta, 0, _ctx.Character.MaxEnergy);
         double lo = Math.Min(start, end), hi = Math.Max(start, end), value = 0;
-        (double Upto, double Marginal)[] bands = [(30, 0.9), (50, 0.6), (70, 0.35), (double.MaxValue, 0.15)];
+        (double Upto, double Marginal)[] bands = _ctx.TurnsUntilSummerCamp is 1 or 2
+            ? [(30, 0.9), (50, 0.7), (70, 0.55), (double.MaxValue, 0.4)]
+            : [(30, 0.9), (50, 0.6), (70, 0.35), (double.MaxValue, 0.15)];
         double floor = 0;
         foreach (var (upto, marginal) in bands)
         {
