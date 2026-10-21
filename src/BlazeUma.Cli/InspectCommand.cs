@@ -5,14 +5,14 @@ using BlazeUma.Memory.Il2Cpp;
 namespace BlazeUma.Cli;
 
 /// <summary>
-/// BlazeUma.Cli inspect dialog|view|controller|story|0x<addr> [--pid N] [--metadata PATH]
+/// BlazeUma.Cli inspect dialog|view|controller|story|0x&lt;addr&gt; [--pid N] [--metadata PATH]
 /// Prints the instance fields of the topmost dialog (and its <c>_data</c>), of the current view / view
 /// controller, or of the StoryManager and its story view controller: name, type kind and value (strings, numbers, bools; class name for object references).
 /// For mapping screens whose buttons are not plain fields.
 /// </summary>
 internal static class InspectCommand
 {
-    public const string Usage = "usage: BlazeUma.Cli inspect dialog|view|controller|story [--pid N] [--metadata PATH]";
+    public const string Usage = "usage: BlazeUma.Cli inspect dialog|view|controller|story|0x<addr> [--pid N] [--metadata PATH]";
 
     public static int Run(string[] args)
     {

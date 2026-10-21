@@ -17,11 +17,8 @@ public sealed class MasterDatabase : IGameData, IDisposable
     private readonly Dictionary<int, RaceProgram?> _programs = [];
     private readonly Dictionary<int, SkillInfo?> _skills = [];
 
-    public string SourcePath { get; }
-
     private MasterDatabase(string sourcePath, string workingCopy)
     {
-        SourcePath = sourcePath;
         _db = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = workingCopy,

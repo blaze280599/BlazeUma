@@ -1,4 +1,3 @@
-using BlazeUma.Data;
 using BlazeUma.Memory.Game;
 
 namespace BlazeUma.Advisor;

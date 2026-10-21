@@ -16,7 +16,7 @@ public sealed class Il2CppRuntime
 {
     // Il2CppClass offsets verified from exported accessors in this build.
     public const int ClassName = 0x10, ClassNamespace = 0x18, ClassParent = 0x58, ClassFields = 0x80,
-        ClassMethods = 0x98, ClassStaticFields = 0xB8, ClassInstanceSize = 0xF8, ClassMethodCount = 0x120, ClassFieldCount = 0x124;
+        ClassMethods = 0x98, ClassStaticFields = 0xB8, ClassMethodCount = 0x120, ClassFieldCount = 0x124;
     private const int FieldInfoSize = 0x20;
 
     private readonly IMemory _memory;
@@ -138,7 +138,6 @@ public sealed class Il2CppRuntime
 
     public ulong Parent(ulong klass) => _memory.ReadPointer(klass + ClassParent);
     public ulong StaticFieldData(ulong klass) => _memory.ReadPointer(klass + ClassStaticFields);
-    public uint InstanceSize(ulong klass) => _memory.ReadUInt32(klass + ClassInstanceSize);
 
     /// <summary>Declared fields of exactly this class (not inherited).</summary>
     public IReadOnlyList<Il2CppField> DeclaredFields(ulong klass)

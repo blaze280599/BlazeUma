@@ -64,7 +64,6 @@ public sealed record SkillInfo(
     string Condition, int AbilityType)
 {
     public bool IsGold => Rarity >= 2 && Rarity < 3;
-    public bool IsUnique => Rarity >= 3;
 }
 
 /// <summary>support_card_type: 1 = stat card, 2 = friend, 3 = group. TrainingCommandId is the card's specialty (101 …).</summary>

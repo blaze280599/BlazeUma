@@ -87,11 +87,11 @@ public sealed class ObscuredKeys
 
     public ObscuredKeys(IMemory memory, Il2CppRuntime runtime)
     {
-        IntKey = memory.ReadUInt32(Verify(memory, runtime, "ObscuredInt",
+        IntKey = memory.ReadUInt32(Verify(runtime, "ObscuredInt",
             new() { ["currentCryptoKey"] = 0x10, ["hiddenValue"] = 0x14, ["inited"] = 0x18, ["fakeValue"] = 0x1C, ["fakeValueActive"] = 0x20 }));
-        BoolKey = memory.ReadByte(Verify(memory, runtime, "ObscuredBool",
+        BoolKey = memory.ReadByte(Verify(runtime, "ObscuredBool",
             new() { ["currentCryptoKey"] = 0x10, ["hiddenValue"] = 0x14, ["inited"] = 0x18, ["fakeValue"] = 0x19, ["fakeValueActive"] = 0x1A }));
-        LongKey = (long)memory.ReadUInt64(Verify(memory, runtime, "ObscuredLong",
+        LongKey = (long)memory.ReadUInt64(Verify(runtime, "ObscuredLong",
             new() { ["currentCryptoKey"] = 0x10, ["hiddenValue"] = 0x18, ["inited"] = 0x20, ["fakeValue"] = 0x28, ["fakeValueActive"] = 0x30 }));
 
         // The observed two-argument ObscuredInt.Decrypt contains `test edi,edi; je; xor ebx,edi` at +0x2F.
@@ -102,7 +102,7 @@ public sealed class ObscuredKeys
     }
 
     /// <summary>Checks boxed instance offsets and returns the address of the static cryptoKey.</summary>
-    private static ulong Verify(IMemory memory, Il2CppRuntime runtime, string name, Dictionary<string, int> expected)
+    private static ulong Verify(Il2CppRuntime runtime, string name, Dictionary<string, int> expected)
     {
         ulong klass = runtime.GetClass(Ns + name);
         if (klass == 0) throw new UnsupportedLayoutException($"{name} class is not initialized.");

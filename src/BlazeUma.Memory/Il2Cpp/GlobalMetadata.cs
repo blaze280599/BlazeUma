@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace BlazeUma.Memory.Il2Cpp;
@@ -20,7 +19,6 @@ public sealed class GlobalMetadata
     private Dictionary<string, int>? _typeIndex;
 
     public string Path { get; }
-    public string Sha256 { get; }
     public int TypeCount => _typesSize / TypeDefinitionSize;
 
     public GlobalMetadata(string path)
@@ -29,7 +27,6 @@ public sealed class GlobalMetadata
         _data = File.ReadAllBytes(path);
         if (U32(0) != Magic || (int)U32(4) != Version)
             throw new UnsupportedLayoutException("Only IL2CPP metadata v31 is supported.");
-        Sha256 = Convert.ToHexStringLower(SHA256.HashData(_data));
         (_stringsOffset, _stringsSize) = Table(0x18);
         (_typesOffset, _typesSize) = Table(0xA0);
         var (_, fieldsSize) = Table(0x60);

@@ -4,7 +4,8 @@ Career helper for Umamusume: Pretty Derby (Steam). It reads game state from memo
 (read-only) and will drive a URA Finale career in advisor → supervised → auto modes.
 
 Status: the memory layer, the game-data layer and an advisor (recommendations only)
-work against the live game. Input automation and a UI are not built yet.
+work against the live game. Supervised automation (`auto run`) taps through trainings, events and races
+through an in-game agent; there is no UI yet.
 
 ## Layout
 
@@ -13,7 +14,9 @@ work against the live game. Input automation and a UI are not built yet.
 | `src/BlazeUma.Memory` | Read-only game access: Win32 reads, IL2CPP metadata/runtime, ACTk Obscured decoders, career snapshot |
 | `src/BlazeUma.Data` | Game data from the client's `master.mdb` (SQLite): calendar, goals, races, skills, cards, text |
 | `src/BlazeUma.Advisor` | Decision engine: targets, value model, turn / event / race / skill advice |
-| `src/BlazeUma.Cli` | Prints a live `CareerSnapshot` as JSON, or advice with `--advise` |
+| `src/BlazeUma.Automation` | Injects the in-game agent and talks to it over a named pipe |
+| `src/BlazeUma.Cli` | Snapshot JSON, `--advise`, and the `agent` / `buttons` / `inspect` / `auto` commands |
+| `agent/` | C++ DLL loaded into the game; runs taps and calls on Unity's main thread |
 | `tests/` | Decoder, layout, data and advisor tests |
 | `research/` | Verified findings and the Python scripts used to find them |
 
@@ -61,7 +64,7 @@ conditions, skills learned, and a best-guess action such as `training:101`, `out
 ## In-game agent (automation, in progress)
 
 `agent/` is a small C++ DLL loaded into the game; `src/BlazeUma.Automation` injects it and talks to it
-over a local named pipe. Step 1 only answers `ping`; it does not touch the game yet. The memory reader
+over a local named pipe. It answers `ping` and runs `tap` / `call` on Unity's main thread. The memory reader
 stays read-only; the injector is the only part that opens the game with write access.
 
 ```powershell
