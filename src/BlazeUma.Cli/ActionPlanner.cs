@@ -16,8 +16,11 @@ internal sealed record StepTarget(ulong Button, string Where, string? SkipReason
 /// <summary>One tap in a plan. <see cref="Resolve"/> runs just before the tap, against the live screen.</summary>
 internal sealed record PlanStep(string Description, Func<GameReader, StepTarget> Resolve, WaitFor Wait, int CommandId = 0);
 
-/// <summary>An advisor pick turned into taps. Steps not covered yet leave <see cref="Unsupported"/> set.</summary>
-internal sealed record ActionPlan(string Action, IReadOnlyList<PlanStep> Steps, string? Unsupported = null);
+/// <summary>
+/// An advisor pick turned into taps. Steps not covered yet leave <see cref="Unsupported"/> set.
+/// <see cref="RunsRace"/>: after the steps, <see cref="RaceRunner"/> drives the race screens to the next turn.
+/// </summary>
+internal sealed record ActionPlan(string Action, IReadOnlyList<PlanStep> Steps, string? Unsupported = null, bool RunsRace = false);
 
 /// <summary>
 /// Maps advisor actions (option labels) to tap sequences on the home screen. Each step finds its button on
@@ -87,7 +90,7 @@ internal static class ActionPlanner
 
     /// <summary>
     /// Open the race list, select the race (the goal row when <paramref name="programId"/> is null), tap the
-    /// green Race button. Screens after entry (paddock, race, results) are not mapped yet.
+    /// green Race button. <see cref="RaceRunner"/> then confirms entry and runs the race through to the next turn.
     /// </summary>
     private static ActionPlan Race(string action, string openButton, string openDescription, int? programId)
     {
@@ -120,7 +123,7 @@ internal static class ActionPlanner
                     ? StepTarget.Fail("no Race button on screen")
                     : new StepTarget(list.EntryButton, $"View.EntryButton (program {row.ProgramId})");
             }, WaitFor.LeftRaceList),
-        ]);
+        ], RunsRace: true);
     }
 
     /// <summary>"Recreation: trainee" or "Recreation: &lt;friend name&gt;": open the picker, then tap that row.</summary>

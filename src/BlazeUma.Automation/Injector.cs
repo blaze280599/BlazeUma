@@ -57,6 +57,7 @@ public static class Injector
         dllPath = Path.GetFullPath(dllPath);
         if (!File.Exists(dllPath)) throw new FileNotFoundException("Agent DLL not found; build agent/ first.", dllPath);
         if (IsLoaded(pid)) return false;
+        dllPath = ShadowCopy(dllPath);
 
         using var process = OpenProcess(CreateThread | VmOperation | VmRead | VmWrite | QueryLimited | Synchronize, false, pid);
         if (process.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcess for injection failed");
@@ -81,5 +82,24 @@ public static class Injector
         {
             VirtualFreeEx(process, remote, 0, MemRelease);
         }
+    }
+
+    /// <summary>
+    /// The game keeps a loaded DLL's file locked, so load a copy (keyed by content, same file name) and
+    /// leave the build output free to be rebuilt while the agent runs. The copy sits beside the original:
+    /// the game refuses DLLs from %LOCALAPPDATA% (LoadLibraryW returns null there), so stay out of AppData.
+    /// </summary>
+    private static string ShadowCopy(string dllPath)
+    {
+        byte[] bytes = File.ReadAllBytes(dllPath);
+        string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..12];
+        string dir = Path.Combine(Path.GetDirectoryName(dllPath)!, "loaded", hash);
+        string copy = Path.Combine(dir, AgentFileName);
+        if (!File.Exists(copy))
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(copy, bytes);
+        }
+        return copy;
     }
 }

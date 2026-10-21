@@ -5,6 +5,8 @@
 // Protocol: one command per message, one reply per command.
 //   ping                                    -> pong <pid> v<ver>
 //   tap <obj_hex> <fn_hex> <mi_hex>         -> ok | error <...>    (calls fn(obj, mi) on main thread)
+//   call <obj_hex> <fn_hex> <mi_hex>        -> ok <ret_hex> | error <...>   (same, returns RAX: a pointer
+//                                              or, for bool getters, the low byte)
 //   quit                                    -> bye                 (removes hook, unloads DLL)
 
 #include <windows.h>
@@ -16,7 +18,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.2";
+constexpr const char* kVersion = "0.3";
 
 HMODULE g_self = nullptr;
 volatile bool g_quit = false;
@@ -25,8 +27,9 @@ volatile bool g_quit = false;
 struct TapJob
 {
     void* obj = nullptr;
-    void (*fn)(void*, void*) = nullptr;
+    void* (*fn)(void*, void*) = nullptr;
     void* mi = nullptr;
+    void* result = nullptr;
     HANDLE done = nullptr;    // auto-reset event
     volatile LONG status = 0; // 0 pending, 1 ok, 2 SEH, 3 timed out (hook must drop silently)
 };
@@ -37,9 +40,9 @@ HHOOK g_hook = nullptr;
 
 // Run the function under SEH. Separate function because MSVC forbids __try in a function with
 // unwinding C++ objects (lock_guard etc.).
-static LONG RunUnderSeh(void (*fn)(void*, void*), void* obj, void* mi)
+static LONG RunUnderSeh(void* (*fn)(void*, void*), void* obj, void* mi, void** result)
 {
-    __try { fn(obj, mi); return 1; }
+    __try { *result = fn(obj, mi); return 1; }
     __except (EXCEPTION_EXECUTE_HANDLER) { return 2; }
 }
 
@@ -57,7 +60,7 @@ LRESULT CALLBACK HookProc(int code, WPARAM wParam, LPARAM lParam)
         if (job != nullptr)
         {
             if (InterlockedCompareExchange(&job->status, 1, 0) == 0)
-                InterlockedExchange(&job->status, RunUnderSeh(job->fn, job->obj, job->mi));
+                InterlockedExchange(&job->status, RunUnderSeh(job->fn, job->obj, job->mi, &job->result));
             SetEvent(job->done);
         }
     }
@@ -98,7 +101,8 @@ void RemoveHook()
     if (g_hook != nullptr) { UnhookWindowsHookEx(g_hook); g_hook = nullptr; }
 }
 
-std::string HandleTap(const std::string& args)
+// Runs fn(obj, mi) on the main thread. withResult: reply "ok <rax hex>" instead of "ok".
+std::string HandleCall(const std::string& args, bool withResult)
 {
     unsigned long long obj = 0, fn = 0, mi = 0;
     if (sscanf_s(args.c_str(), "%llx %llx %llx", &obj, &fn, &mi) != 3 || fn == 0 || mi == 0 || obj == 0)
@@ -110,7 +114,7 @@ std::string HandleTap(const std::string& args)
 
     TapJob job;
     job.obj = reinterpret_cast<void*>(obj);
-    job.fn = reinterpret_cast<void(*)(void*, void*)>(fn);
+    job.fn = reinterpret_cast<void*(*)(void*, void*)>(fn);
     job.mi = reinterpret_cast<void*>(mi);
     job.done = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (job.done == nullptr) return "error CreateEvent failed";
@@ -134,7 +138,12 @@ std::string HandleTap(const std::string& args)
         return "error timed out waiting for main thread";
     }
     LONG s = InterlockedCompareExchange(&job.status, 0, 0);
-    return s == 1 ? "ok" : (s == 2 ? "error exception in game call" : "error unknown");
+    if (s == 2) return "error exception in game call";
+    if (s != 1) return "error unknown";
+    if (!withResult) return "ok";
+    char text[32];
+    sprintf_s(text, "ok %llx", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(job.result)));
+    return text;
 }
 
 std::string Handle(std::string command)
@@ -145,7 +154,9 @@ std::string Handle(std::string command)
     if (command == "ping")
         return "pong " + std::to_string(GetCurrentProcessId()) + " v" + kVersion;
     if (command.rfind("tap ", 0) == 0)
-        return HandleTap(command.substr(4));
+        return HandleCall(command.substr(4), false);
+    if (command.rfind("call ", 0) == 0)
+        return HandleCall(command.substr(5), true);
     if (command == "quit")
     {
         g_quit = true;

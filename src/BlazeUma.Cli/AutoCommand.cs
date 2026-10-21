@@ -11,8 +11,9 @@ namespace BlazeUma.Cli;
 /// <summary>
 /// BlazeUma.Cli auto plan|run [--action "Train Wit"] [--pid N] [--metadata PATH] [--master PATH]
 /// plan: show the taps for the advisor's pick (or --action) without doing anything.
-/// run:  supervised: confirm each tap with Enter (s = skip step, q = stop). Dialogs that open afterwards
-///       (confirmations, the outing picker) are listed so you choose the button.
+/// run:  supervised: confirm each tap with Enter (s = skip step, q = stop, a = do the rest of this action
+///       without asking). Races run on through entry, the race and results to the next turn. Other dialogs
+///       that open afterwards (confirmations) are listed so you choose the button.
 /// </summary>
 internal static class AutoCommand
 {
@@ -87,7 +88,9 @@ internal static class AutoCommand
             string target = i == 0 || resolveAll ? Describe(plan.Steps[i].Resolve(reader)) : "(found on screen when it runs)";
             Console.WriteLine($"  {i + 1}. {plan.Steps[i].Description}  {target}");
         }
-        Console.WriteLine("  then: pick from any dialog that opens, until the turn advances");
+        Console.WriteLine(plan.RunsRace
+            ? "  then: confirm entry, View Results, skip the result scenes and popups, until home on the next turn"
+            : "  then: pick from any dialog that opens, until the turn advances");
         if (!execute) return 0;
 
         Console.WriteLine(ButtonTapper.EnsureAgent(reader.ProcessId));
@@ -101,6 +104,14 @@ internal static class AutoCommand
     {
         var r = reader.ManagedReader;
         var tapper = new ButtonTapper(reader);
+        bool auto = false;
+        char Confirm(string question)
+        {
+            if (auto) { Console.WriteLine($"{question}  (auto)"); return '\n'; }
+            char c = Ask(question);
+            if (c == 'a') auto = true;
+            return c;
+        }
 
         for (int i = 0; i < plan.Steps.Count; i++)
         {
@@ -109,7 +120,7 @@ internal static class AutoCommand
             if (target.SkipReason is not null) { Console.WriteLine($"Step {i + 1}: skipped, {target.SkipReason}."); continue; }
             if (target.Error is not null) { Console.WriteLine($"Step {i + 1}: stopping, {target.Error}."); return 1; }
 
-            switch (Ask($"Step {i + 1}/{plan.Steps.Count}: {step.Description}  → {target.Where}"))
+            switch (Confirm($"Step {i + 1}/{plan.Steps.Count}: {step.Description}  → {target.Where}"))
             {
                 case 'q': Console.WriteLine("Stopped. Nothing else was tapped."); return 0;
                 case 's': Console.WriteLine("Skipped."); continue;
@@ -120,6 +131,12 @@ internal static class AutoCommand
             string result = WaitAfter(reader, step, startTurn);
             Console.WriteLine($"   {result}");
             if (TurnNow(reader) > startTurn || EventShowing(reader)) return Finish(reader, startTurn);
+        }
+
+        if (plan.RunsRace && TurnNow(reader) <= startTurn)
+        {
+            Console.WriteLine("Running the race:");
+            RaceRunner.Run(reader, tapper, startTurn, Confirm);
         }
 
         // Follow-up: confirmations and pickers. The user chooses; nothing is guessed.
@@ -149,7 +166,7 @@ internal static class AutoCommand
         {
             if (now <= startTurn && RaceEntryScreen.Read(reader.ManagedReader) is null && DialogButtons(reader.ManagedReader).Count == 0
                 && reader.Snapshot().Screen?.ViewController != "Gallop.SingleModeMainViewController")
-                Console.WriteLine("This screen is not automated yet (race screens after entry); continue by hand. " +
+                Console.WriteLine("This screen is not automated yet; continue by hand. " +
                                   "`buttons --watch` records each screen so it can be added.");
         }
         catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { }
@@ -191,7 +208,7 @@ internal static class AutoCommand
 
     private static char Ask(string question)
     {
-        Console.Write($"{question}\n   Enter = tap, s = skip, q = stop: ");
+        Console.Write($"{question}\n   Enter = tap, s = skip, q = stop, a = all the rest: ");
         string answer = Console.ReadLine()?.Trim().ToLowerInvariant() ?? "q";
         return answer.Length == 0 ? '\n' : answer[0];
     }

@@ -1,3 +1,4 @@
+using BlazeUma.Automation;
 using BlazeUma.Memory;
 using BlazeUma.Memory.Game;
 using BlazeUma.Memory.Il2Cpp;
@@ -5,21 +6,23 @@ using BlazeUma.Memory.Il2Cpp;
 namespace BlazeUma.Cli;
 
 /// <summary>
-/// BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all] [--watch SECONDS]
+/// BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all] [--active] [--watch SECONDS]
 /// Lists UI buttons reachable from the current scene's view, controller, footer and open dialogs.
 /// Only tappable (enabled + interactable) buttons by default; --all shows every match.
+/// --active asks the in-game agent which tappable buttons are really on screen (active GameObject) and
+/// shows only those; hidden layouts keep their buttons enabled, so without it some listed buttons are not visible.
 /// --watch traces: prints (and appends to logs/trace-*.txt) every time the screen or its buttons change,
 /// so a flow played by hand can be mapped for automation.
 /// </summary>
 internal static class ButtonsCommand
 {
-    public const string Usage = "usage: BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all] [--watch SECONDS]";
+    public const string Usage = "usage: BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all] [--active] [--watch SECONDS]";
 
     public static int Run(string[] args)
     {
         int? pid = null;
         string? metadata = null;
-        bool all = false;
+        bool all = false, active = false;
         double? watch = null;
         for (int i = 0; i < args.Length; i++)
         {
@@ -28,6 +31,7 @@ internal static class ButtonsCommand
                 case "--pid": pid = int.Parse(args[++i]); break;
                 case "--metadata": metadata = args[++i]; break;
                 case "--all": all = true; break;
+                case "--active": active = true; break;
                 case "--watch": watch = double.Parse(args[++i]); break;
                 default: Console.Error.WriteLine(Usage); return 2;
             }
@@ -36,12 +40,18 @@ internal static class ButtonsCommand
         try
         {
             using var reader = GameReader.Open(pid, metadata);
+            ButtonTapper? tapper = null;
+            if (active)
+            {
+                Console.WriteLine(ButtonTapper.EnsureAgent(reader.ProcessId));
+                tapper = new ButtonTapper(reader);
+            }
             if (watch is null)
             {
-                Console.WriteLine(Describe(reader.ManagedReader, all));
+                Console.WriteLine(Describe(reader.ManagedReader, all, tapper));
                 return 0;
             }
-            return Trace(reader.ManagedReader, all, TimeSpan.FromSeconds(Math.Max(0.25, watch.Value)));
+            return Trace(reader.ManagedReader, all, tapper, TimeSpan.FromSeconds(Math.Max(0.25, watch.Value)));
         }
         catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InvalidOperationException
                                       or System.ComponentModel.Win32Exception or IOException)
@@ -52,7 +62,7 @@ internal static class ButtonsCommand
     }
 
     /// <summary>Screen name, open dialog titles and the buttons, as printable text.</summary>
-    private static string Describe(ManagedReader r, bool all)
+    private static string Describe(ManagedReader r, bool all, ButtonTapper? tapper)
     {
         var buttons = new ButtonFinder(r).FromCurrentScene();
         var lines = new List<string> { $"Screen: {ViewName(r)}{DialogTitles(r)}" };
@@ -60,7 +70,10 @@ internal static class ButtonsCommand
         foreach (var b in buttons.OrderByDescending(b => b.CanTap).ThenBy(b => b.Path))
         {
             if (!all && !b.CanTap) continue;
-            char mark = b.CanTap ? '✓' : (b.IsEnable ? 'E' : ' ');
+            // h = tappable but hidden (inactive GameObject); only known with --active.
+            bool hidden = tapper is not null && b.CanTap && tapper.IsActive(b.Address) != true;
+            if (hidden && !all) continue;
+            char mark = hidden ? 'h' : b.CanTap ? '✓' : (b.IsEnable ? 'E' : ' ');
             lines.Add($" {mark} 0x{b.Address:X}  {b.Path,-70}  {b.ClassName}");
             shown++;
         }
@@ -68,7 +81,7 @@ internal static class ButtonsCommand
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static int Trace(ManagedReader r, bool all, TimeSpan interval)
+    private static int Trace(ManagedReader r, bool all, ButtonTapper? tapper, TimeSpan interval)
     {
         Directory.CreateDirectory("logs");
         string path = Path.Combine("logs", $"trace-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
@@ -81,7 +94,7 @@ internal static class ButtonsCommand
             try
             {
                 // Compare without addresses: the same screen re-created at new addresses is not a change.
-                string text = Describe(r, all);
+                string text = Describe(r, all, tapper);
                 string key = string.Join("\n", text.Split(Environment.NewLine).Select(l => l.Length > 22 && l.StartsWith(' ') ? l[22..] : l));
                 if (key != last)
                 {
@@ -91,7 +104,8 @@ internal static class ButtonsCommand
                     last = key;
                 }
             }
-            catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { }
+            catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException
+                                          or TimeoutException or IOException) { }
             try { Thread.Sleep(interval); } catch (ThreadInterruptedException) { break; }
         }
         return 0;

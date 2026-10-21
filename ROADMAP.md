@@ -111,8 +111,20 @@ Work through these in order, one at a time. Each item says how we know it is don
    pre-selected (Tulip Sho, program 185). New entry state 5 = blocked because a goal race is due today.
    `RaceEntryScreen` reads rows / selection / Race button; plans "Goal race" (race day) and
    "Race: <name>" (optional race) go open list → select row (skipped if selected) → Race.
-   Screens after entry are not mapped yet: `buttons --watch` traces each screen change to
-   `logs/trace-*.txt` so one hand-played race can map them.
+   Step 4f: races past entry, mapped from a traced hand-played Tulip Sho (turn 29 → 30): green Race →
+   "Race Details" dialog (right = Race) → short `StoryViewController` → `SingleModePaddockViewController`
+   (`_raceSkipButton` = View Results, `_raceStartButtonCenter/Right` = watch) → `RaceMainViewController`
+   (`_raceUI._skipButtonCommon`, then `_raceResultSceneUI._skipButton`, then `_resultList._nextButton` /
+   `_singleModeNextButton`) → home with "Goal Achieved" (one button) → `SingleModeMonthStartViewController`
+   (`_screenTapButton`) → home on the next turn. Result: +925 fans, skill bought before the race.
+   Hidden layouts keep their buttons enabled and interactable (the result list reports daily-race and
+   team-building buttons as tappable), so agent v0.3 adds `call` (returns RAX) and `ButtonTapper.IsActive`
+   asks `Component.get_gameObject` → `GameObject.get_activeInHierarchy`. Checked live on turn 30's home:
+   exactly the visible buttons are active (race-day buttons, closed training tiles, summer outing hidden).
+   `RaceRunner` drives the screens by rules (first active match wins; dialogs: Race Details → right,
+   one visible button → tap it, more → ask), waits out transitions, stops after 30 s on an unmapped screen.
+   The game refuses DLLs from %LOCALAPPDATA% (LoadLibraryW null); the injector loads a content-hashed copy
+   from `agent/build/Release/loaded/` so rebuilding never hits a locked file.
 
    First supervised action (turn 28 → 29): `auto run` skipped the Recreation tap (picker already open),
    tapped Light Hello's row after confirmation, and saw the turn advance in 2.5 s. Measured outing (final

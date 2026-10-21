@@ -73,13 +73,23 @@ dotnet run --project src/BlazeUma.Cli -- agent unload    # agent removes itself
 
 dotnet run --project src/BlazeUma.Cli -- buttons         # list tappable buttons on the current screen
 dotnet run --project src/BlazeUma.Cli -- buttons --all   # include non-tappable
+dotnet run --project src/BlazeUma.Cli -- buttons --active  # only buttons really on screen (agent checks the GameObject)
+dotnet run --project src/BlazeUma.Cli -- buttons --watch 0.5   # trace screen changes to logs/trace-*.txt
 dotnet run --project src/BlazeUma.Cli -- agent tap 0x<addr>   # invoke a button's click on Unity's main thread
 dotnet run --project src/BlazeUma.Cli -- agent tap-path Details   # tap by field-path substring (aliases: Rest, Training, Close, Back, …)
 
 dotnet run --project src/BlazeUma.Cli -- auto plan                 # taps the advisor's pick would need (dry run)
-dotnet run --project src/BlazeUma.Cli -- auto run                  # supervised: Enter confirms each tap, q stops
+dotnet run --project src/BlazeUma.Cli -- auto run                  # supervised: Enter confirms each tap, q stops, a = rest of the action unasked
 dotnet run --project src/BlazeUma.Cli -- auto run --action "Train Wit"   # a specific action instead of the advisor's pick
+dotnet run --project src/BlazeUma.Cli -- auto run --action "Race: Mile Cup"   # optional race; race day runs the goal race
 ```
+
+Races run end to end: entry confirmation, View Results, the result scenes, goal popups and the new-month
+screen, until home on the next turn. An unmapped screen stops the run and hands back to you.
+
+The game loads the agent from a copy in `agent/build/Release/loaded/<hash>/`, so the agent can be rebuilt
+while the game runs; `auto run` swaps an older loaded agent for the current one. (The game refuses DLLs
+from `%LOCALAPPDATA%`.)
 
 ## How the reader finds things
 
