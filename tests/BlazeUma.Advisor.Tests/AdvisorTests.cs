@@ -41,6 +41,34 @@ public class AdvisorTests
     }
 
     [Fact]
+    public void TurnBeforeGoalRace_LeadsWithBuyingSkills()
+    {
+        // Tulip Sho is turn 29: on turn 28 the planned skills come before the turn's action.
+        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(energy: 100, mood: Mood.Good), turn: 28));
+        Assert.NotEmpty(advice.SkillsToBuy!);
+        Assert.StartsWith("Buy ", advice.Summary);
+        Assert.Contains("first, then train", advice.Summary);
+
+        var noSkills = Advise(Snapshots.Snapshot(Snapshots.Daiwa(energy: 100, mood: Mood.Good)));
+        Assert.Empty(noSkills.SkillsToBuy!);
+        Assert.Equal("Train Speed", noSkills.Summary);
+    }
+
+    [Fact]
+    public void SkillShop_CountsSelectedSkillsBackIntoThePoints()
+    {
+        // Competitive Spirit (90) selected with + but not learned: the screen shows 10 points left of 100.
+        var shop = new SkillShop(10, [new ShopSkill(200282, 90, 90, 0, 0, Obtained: false, Locked: false, Selected: true)]);
+        var snapshot = Snapshots.Snapshot(Snapshots.Daiwa(), turn: 28) with
+        {
+            Screen = new Screen(null, "Gallop.SingleModeSkillLearningViewController", 0), SkillShop = shop,
+        };
+        var advice = Advise(snapshot);
+        Assert.Equal(Situation.SkillShop, advice.Situation);
+        Assert.Equal([200282], advice.SkillsToBuy!);
+    }
+
+    [Fact]
     public void GoalTurn_IsRaceDay()
     {
         var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(), turn: 12));
@@ -241,6 +269,18 @@ public class SkillAdvisorTests
 {
     private static SkillAdvisor Advisor(int turn = 14) =>
         new(new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(hints: [new SkillHint(20071, 1, 1)]), turn: turn), new FakeGameData()));
+
+    [Fact]
+    public void FromShop_OffersOnlyTheNextSkillInEachRow()
+    {
+        ShopSkill Skill(int id, int row, int step, bool obtained = false) => new(id, 100, 100, 0, 0, obtained, false, false, row, step);
+        // Row 0 is a ○ → ◎ pair (◎ needs ○ first); row 1 a single skill.
+        var shop = new SkillShop(500, [Skill(200712, 0, 0), Skill(200722, 0, 1), Skill(200572, 1, 0)]);
+        Assert.Equal([200572, 200712], Advisor().FromShop(shop).Select(c => c.Skill.Id).Order());
+
+        var afterFirst = new SkillShop(500, [Skill(200712, 0, 0, obtained: true), Skill(200722, 0, 1), Skill(200572, 1, 0)]);
+        Assert.Equal([200572, 200722], Advisor().FromShop(afterFirst).Select(c => c.Skill.Id).Order());
+    }
 
     [Fact]
     public void Fit_FollowsGoalDistances_AndRunningStyle()

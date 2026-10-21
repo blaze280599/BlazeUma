@@ -40,6 +40,8 @@ internal sealed class AutoBot(BotControl control)
     /// show the same turn again for a moment; only events are answered until the turn number moves on.
     /// </summary>
     private int _spentTurn = -1;
+    /// <summary>The turn the skill screen was last opened for, so it is opened at most once a turn.</summary>
+    private int _skillsTurn = -1;
 
     public Mode Run()
     {
@@ -99,6 +101,7 @@ internal sealed class AutoBot(BotControl control)
         _idle = null;
         _turn = -1;
         _spentTurn = -1;
+        _skillsTurn = -1;
         _actionsThisTurn = 0;
         int failures = 0;
 
@@ -165,13 +168,18 @@ internal sealed class AutoBot(BotControl control)
     private (Outcome, string?) Round(GameReader reader, CareerAdvisor advisor, MasterDatabase data)
     {
         var snapshot = reader.Snapshot();
+        if (snapshot.Screen?.ViewController == InspirationScreen) return (Inspiration(reader), null);
         var advice = advisor.Advise(snapshot);
         int turn = snapshot.Turn ?? 0;
 
         string? action =
             RaceRunner.InProgress(reader.ManagedReader) ? ActionPlanner.GoalRace   // left mid-race (pause, by hand)
             : advice.Situation == Situation.Event ? advice.Best?.Label
+            : advice.Situation == Situation.SkillShop ? ActionPlanner.LearnSkills
             : turn == _spentTurn ? null                                             // the game is still finishing this turn
+            // The advisor buys skills on the turn before a goal race (and on race day): learn them before acting.
+            : advice.Situation is Situation.TrainingTurn or Situation.GoalRaceDay && turn != _skillsTurn
+              && advice.SkillsToBuy is { Count: > 0 } ? ActionPlanner.OpenSkills
             : advice.Situation == Situation.GoalRaceDay ? ActionPlanner.GoalRace
             : advice.Situation == Situation.TrainingTurn ? advice.Best?.Label
             : null;
@@ -200,10 +208,13 @@ internal sealed class AutoBot(BotControl control)
         Console.WriteLine("  " + ConsoleUi.Accent("▶ " + action) + ConsoleUi.Dim(action == advice.Summary ? "" : $"  ({advice.Summary})"));
 
         var bonds = snapshot.Character?.Bonds ?? [];
-        var plan = ActionPlanner.For(action,
-            slot => bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null,
-            name => data.ProgramsForTurn(turn)
-                .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.ProgramId);
+        if (action == ActionPlanner.OpenSkills) _skillsTurn = turn;
+        var plan = action == ActionPlanner.OpenSkills ? ActionPlanner.SkillScreenOpen(advice.Situation == Situation.GoalRaceDay)
+            : action == ActionPlanner.LearnSkills ? ActionPlanner.SkillShop(advice.SkillsToBuy ?? [], id => data.Skill(id)?.Name ?? $"skill {id}")
+            : ActionPlanner.For(action,
+                slot => bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null,
+                name => data.ProgramsForTurn(turn)
+                    .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.ProgramId);
         if (plan.Unsupported is not null) return (Outcome.NeedsYou, $"{action}: {plan.Unsupported}.");
 
         // After the previous turn's training, IsInTraining stays true while the next turn starts, and through any
@@ -218,6 +229,36 @@ internal sealed class AutoBot(BotControl control)
         if (result == Outcome.Done && actionTapped && !plan.IsEvent && TurnNow(reader) == turn && EventShowing(reader)) _spentTurn = turn;
         if (result == Outcome.Done) Thread.Sleep(Settle);
         return (result, problem);
+    }
+
+    /// <summary>The inspiration (succession) cutscene: one GO! button (Senior Early Mar, turn 55).</summary>
+    private const string InspirationScreen = "Gallop.SingleModeSuccessionEventViewController";
+    private const string InspirationButton = "View.SuccessionButton";
+
+    /// <summary>Taps GO! once and waits for the cutscene to move on; taps again only if GO! is still showing (3 tries).</summary>
+    private Outcome Inspiration(GameReader reader)
+    {
+        var r = reader.ManagedReader;
+        var tapper = new ButtonTapper(reader);
+        Console.WriteLine("  " + ConsoleUi.Accent("▶ Inspiration") + ConsoleUi.Dim("  (tap GO!)"));
+        bool OnScreen() => reader.Snapshot().Screen?.ViewController == InspirationScreen;
+        for (int attempt = 1; attempt <= 3 && !control.Halting; attempt++)
+        {
+            try
+            {
+                if (!OnScreen()) break;
+                var go = new ButtonFinder(r).FromCurrentScene().FirstOrDefault(b => b.Path == InspirationButton && b.CanTap);
+                if (go is null || tapper.IsActive(go.Address) != true) { Thread.Sleep(Poll); continue; }   // not shown yet
+                Thread.Sleep(StepGap);
+                Console.WriteLine(ConsoleUi.Dim("   • Tap GO!" + (attempt > 1 ? $" (again, try {attempt})" : "")));
+                tapper.Tap(go.Address);
+            }
+            catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { }
+            if (WaitUntil(() => !OnScreen(), TimeSpan.FromSeconds(5))) break;
+        }
+        if (control.Halting) return Outcome.Interrupted;
+        Thread.Sleep(Settle);
+        return Outcome.Done;
     }
 
     /// <param name="actionTapped">The plan's last step (the action itself: train, rest, outing, race entry) was tapped.</param>
@@ -339,6 +380,16 @@ internal sealed class AutoBot(BotControl control)
             case WaitFor.DialogClosed: return WaitUntil(() => DialogButtons(r).Count == 0, TimeSpan.FromSeconds(5));
             case WaitFor.EventDone: return WaitUntil(() => !EventShowing(reader), TimeSpan.FromSeconds(60));
             case WaitFor.LeftRaceList: return WaitUntil(() => RaceEntryScreen.Read(r) is null || DialogButtons(r).Count > 0, TimeSpan.FromSeconds(10));
+            case WaitFor.SkillScreen:
+                bool shown = WaitUntil(() => reader.Snapshot().Screen?.ViewController == ActionPlanner.SkillScreen, TimeSpan.FromSeconds(8));
+                Thread.Sleep(MenuAnimation);   // the list slides in
+                return shown;
+            case WaitFor.SkillSelected:
+                return WaitUntil(() => ActionPlanner.SkillRow(r, step.CommandId) is { Selected: true }, TimeSpan.FromSeconds(3));
+            case WaitFor.SkillsLearned:
+                return WaitUntil(() => ActionPlanner.DialogIndex(r, ActionPlanner.SkillsLearnedTitle) is not null, TimeSpan.FromSeconds(8));
+            case WaitFor.LeftSkillScreen:
+                return WaitUntil(() => reader.Snapshot().Screen?.ViewController != ActionPlanner.SkillScreen, TimeSpan.FromSeconds(8));
             default: return true;
         }
     }

@@ -241,11 +241,10 @@ public sealed class GameReader : IDisposable
         ulong vc = CurrentViewController();
         if (_r.ClassName(vc) != SkillScreen) return null;
         var skills = _r.ListItems(_r.Ptr(vc, "_skillInfoList"))
-            .SelectMany(group => _r.ListItems(_r.Ptr(group, "_skillList")))
-            .Select(s => new ShopSkill(
+            .SelectMany((group, row) => _r.ListItems(_r.Ptr(group, "_skillList")).Select((s, step) => new ShopSkill(
                 _r.Int(s, "SkillId"), _r.Int(s, "NeedPoint"), _r.Int(s, "OriginNeedPoint"),
                 _r.Int(s, "DiscountRateForDisplay"), _r.Int(s, "HintLv"),
-                _r.Bool(s, "IsGet"), _r.Bool(s, "IsLock"), _r.Bool(s, "IsSelected")))
+                _r.Bool(s, "IsGet"), _r.Bool(s, "IsLock"), _r.Bool(s, "IsSelected"), row, step)))
             .ToList();
         return new SkillShop(_r.Int(vc, "RemainingPoint"), skills);
     }

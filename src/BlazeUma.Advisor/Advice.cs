@@ -15,9 +15,12 @@ public sealed record Note(string Label, string Text);
 /// <param name="Header">Career status line (turn, date, mood, energy …).</param>
 /// <param name="Summary">The recommendation in a few words.</param>
 /// <param name="Details">Diagnostics such as stat weights; shown only in verbose output.</param>
+/// <param name="SkillsToBuy">Skill ids to learn now: from the open skill screen, or predicted from game data
+/// elsewhere (enough to tell whether the skill screen is worth opening).</param>
 public sealed record Advice(
     Situation Situation, string Header, string Summary,
-    IReadOnlyList<ScoredOption> Options, IReadOnlyList<Note> Notes, IReadOnlyList<string> Details)
+    IReadOnlyList<ScoredOption> Options, IReadOnlyList<Note> Notes, IReadOnlyList<string> Details,
+    IReadOnlyList<int>? SkillsToBuy = null)
 {
     public ScoredOption? Best => Options.Count > 0 ? Options[0] : null;
 }

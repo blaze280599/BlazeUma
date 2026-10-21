@@ -17,9 +17,13 @@ public sealed class SkillAdvisor(CareerContext ctx)
         public double PerPoint => Price > 0 ? Value / Price : 0;
     }
 
-    /// <summary>Candidates from the open skill screen.</summary>
+    /// <summary>
+    /// Candidates from the open skill screen: only the next skill in each row, since ◎ can only be learned
+    /// after the ○ before it (its listed price is for ◎ alone).
+    /// </summary>
     public IReadOnlyList<Candidate> FromShop(SkillShop shop) =>
-        shop.Skills.Where(s => !s.Obtained && !s.Locked)
+        shop.Skills.Where(s => !s.Obtained).GroupBy(s => s.Row).Select(row => row.MinBy(s => s.Step)!)
+            .Where(s => !s.Locked)
             .Select(s => ctx.Data.Skill(s.SkillId) is { } info ? Score(info, s.Price) : null)
             .OfType<Candidate>()
             .ToList();

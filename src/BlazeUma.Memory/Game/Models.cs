@@ -85,8 +85,12 @@ public sealed record StoryEvent(int StoryId, int StoryDataId, int CharaId, int S
 
 public sealed record Screen(string? SceneController, string? ViewController, int NextViewId);
 
+/// <summary>
+/// A skill on the learning screen. <paramref name="Row"/>: its row (one per _skillInfoList group);
+/// <paramref name="Step"/>: its place in that row (○ then ◎ share a row, and ◎ needs ○ first).
+/// </summary>
 public sealed record ShopSkill(int SkillId, int Price, int BasePrice, int DiscountPercent, int HintLevel,
-    bool Obtained, bool Locked, bool Selected);
+    bool Obtained, bool Locked, bool Selected, int Row = 0, int Step = 0);
 
 public sealed record RaceEntry(int ProgramId, int RaceInstanceId, int NeedFans, int EntryState, bool IsGoal, bool IsReserved)
 {

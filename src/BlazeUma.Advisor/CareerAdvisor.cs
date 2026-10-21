@@ -64,27 +64,33 @@ public sealed class CareerAdvisor(IGameData data)
         notes.Add(buy.Count > 0
             ? new Note("Skills", $"buy {string.Join(", ", buy.Select(b => $"{b.Skill.Name} ({b.Price})"))} before racing ({why})")
             : new Note("Skills", why));
+        var toBuy = buy.Select(b => b.Skill.Id).ToList();
+        // Skills are bought before the turn's action (the auto bot does the same), so lead with them.
+        string First(string then) => buy.Count > 0 ? $"Buy {string.Join(", ", buy.Select(b => b.Skill.Name))} first, then {char.ToLowerInvariant(then[0])}{then[1..]}" : then;
 
         if (ctx.GoalToday is { } goal)
             return new Advice(Situation.GoalRaceDay, header,
-                $"Race day: run {goal.Name}{(goal.RequiredPlace > 0 ? $" (need top {goal.RequiredPlace})" : "")}", [], notes, details);
+                First($"Race day: run {goal.Name}{(goal.RequiredPlace > 0 ? $" (need top {goal.RequiredPlace})" : "")}"), [], notes, details, toBuy);
 
         var options = new TurnAdvisor(ctx, values).Rank();
-        return new Advice(Situation.TrainingTurn, header, options.Count > 0 ? options[0].Label : "No enabled actions found", options, notes, details);
+        return new Advice(Situation.TrainingTurn, header, First(options.Count > 0 ? options[0].Label : "No enabled actions found"), options, notes, details, toBuy);
     }
 
     private static Advice SkillShopAdvice(CareerContext ctx, string header, SkillShop shop, List<Note> notes, List<string> details)
     {
         var advisor = new SkillAdvisor(ctx);
         var candidates = advisor.FromShop(shop);
-        var (buy, why) = advisor.Plan(candidates, shop.RemainingPoints);
+        // RemainingPoint already excludes skills selected with + but not learned yet; count them back in, so a
+        // half-finished purchase (turn 53: 542 SP showing 58) is still planned rather than dropped.
+        int points = shop.RemainingPoints + shop.Skills.Where(s => s.Selected && !s.Obtained).Sum(s => s.Price);
+        var (buy, why) = advisor.Plan(candidates, points);
         var options = candidates.OrderByDescending(c => c.PerPoint)
             .Select(c => new ScoredOption($"{c.Skill.Name} ({c.Price} SP)", c.PerPoint * 100,
                 [buy.Contains(c) ? "BUY" : "skip for now", $"fit {c.Fit:P0}", $"rating {c.Skill.GradeValue}"]))
             .ToList();
         string summary = buy.Count > 0 ? $"Buy {string.Join(", ", buy.Select(b => b.Skill.Name))}" : "Buy nothing yet";
         notes.Add(new Note("Why", why));
-        return new Advice(Situation.SkillShop, header, summary, options, notes, details);
+        return new Advice(Situation.SkillShop, header, summary, options, notes, details, buy.Select(b => b.Skill.Id).ToList());
     }
 
     private static Advice RaceListAdvice(CareerContext ctx, ValueModel values, string header, RaceList list, List<Note> notes, List<string> details)

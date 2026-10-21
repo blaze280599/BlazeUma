@@ -5,7 +5,8 @@ using BlazeUma.Memory.Il2Cpp;
 namespace BlazeUma.Cli;
 
 /// <summary>What the runner waits for after a tap before moving on.</summary>
-internal enum WaitFor { Nothing, TrainingMenu, TileSelected, Dialog, TurnAdvance, RaceList, RaceSelected, LeftRaceList, DialogClosed, EventDone }
+internal enum WaitFor { Nothing, TrainingMenu, TileSelected, Dialog, TurnAdvance, RaceList, RaceSelected, LeftRaceList, DialogClosed, EventDone,
+    SkillScreen, SkillSelected, LeftSkillScreen, SkillsLearned }
 
 /// <summary>
 /// The button a step taps right now, or why it is skipped / cannot run. <see cref="Method"/> ("Class.Method"):
@@ -46,6 +47,59 @@ internal static class ActionPlanner
     };
 
     public const string GoalRace = "Goal race";
+    public const string OpenSkills = "Open the skill screen", LearnSkills = "Learn skills";
+    public const string SkillScreen = "Gallop.SingleModeSkillLearningViewController";
+    private const string LearnConfirmTitle = "Confirmation";
+    public const string SkillsLearnedTitle = "Skills Learned";
+
+    /// <summary>Tap the home screen's Skills button (race day shows its own copy beside Race!).</summary>
+    public static ActionPlan SkillScreenOpen(bool raceDay) =>
+        new(OpenSkills, [Home("Tap Skills", raceDay ? "_targetRaceSkillGetButton" : "_skillGetButton", WaitFor.SkillScreen)]);
+
+    /// <summary>
+    /// On the skill learning screen: press each skill's + (row found by its _infoList, all rows are built at
+    /// once: 15 of 15 groups, turn 53), then Decide; the confirmation popup that follows goes to the user.
+    /// With nothing (left) to learn: Back to the home screen.
+    /// </summary>
+    public static ActionPlan SkillShop(IReadOnlyList<int> skillIds, Func<int, string> name)
+    {
+        var back = Home("Back to the home screen", "_footerBackButton._backButton", WaitFor.LeftSkillScreen);
+        if (skillIds.Count == 0) return new ActionPlan(LearnSkills, [back]);
+        var steps = skillIds.Select(id => new PlanStep($"Select {name(id)}", g =>
+        {
+            if (SkillRow(g.ManagedReader, id) is not { } row) return StepTarget.Fail($"no row for {name(id)} on the skill screen");
+            if (row.Obtained) return StepTarget.Skip($"{name(id)} is already learned");
+            if (row.Selected) return StepTarget.Skip($"{name(id)} is already selected");
+            return new StepTarget(row.Plus, $"skill row ({name(id)}) _plusButton");
+        }, WaitFor.SkillSelected, id)).ToList();
+        steps.Add(Home("Learn the selected skills", "View.DecideButton", WaitFor.Dialog));
+        // "Confirmation" lists the skills (DialogSingleModeAcquisitionSkillList): Cancel left, Learn right (turn 53).
+        steps.Add(new PlanStep("Confirm: Learn", g =>
+            DialogTitle(g.ManagedReader) != LearnConfirmTitle ? StepTarget.Fail($"expected the \"{LearnConfirmTitle}\" popup, found \"{DialogTitle(g.ManagedReader)}\"")
+            : DialogButton(g, "_rightButton") is { } learn ? new StepTarget(learn.Address, learn.Path)
+            : StepTarget.Fail($"\"{LearnConfirmTitle}\" has no Learn button"), WaitFor.SkillsLearned));
+        // Learn opens "Skills Learned" (Close only) while Confirmation stays listed beneath it until then (turn 53).
+        steps.Add(new PlanStep("Close \"Skills Learned\"", g =>
+            DialogIndex(g.ManagedReader, SkillsLearnedTitle) is not int index ? StepTarget.Fail($"no \"{SkillsLearnedTitle}\" popup")
+            : new ButtonFinder(g.ManagedReader).FromCurrentScene()
+                .FirstOrDefault(b => b.CanTap && b.Path == $"Dialog[{index}]._currentDialogObj._centerButton") is { } close
+                ? new StepTarget(close.Address, close.Path)
+                : StepTarget.Fail($"\"{SkillsLearnedTitle}\" has no Close button"), WaitFor.DialogClosed));
+        return new ActionPlan(LearnSkills, steps);
+    }
+
+    /// <summary>The skill screen row holding <paramref name="skillId"/>: its + button and the skill's state.</summary>
+    public static (ulong Plus, bool Selected, bool Obtained)? SkillRow(ManagedReader r, int skillId)
+    {
+        ulong scene = r.SingletonInstance("Gallop.SceneManager");
+        ulong controller = scene == 0 ? 0 : r.Ptr(scene, "_currentViewController");
+        if (controller == 0 || r.ClassName(controller) != SkillScreen) return null;
+        foreach (ulong item in r.ListItems(r.Ptr(controller, "_itemList")))
+            foreach (ulong info in r.ListItems(r.Ptr(item, "_infoList")))
+                if (r.Int(info, "SkillId") == skillId)
+                    return (r.Ptr(item, "_plusButton"), r.Bool(info, "IsSelected"), r.Bool(info, "IsGet"));
+        return null;
+    }
 
     private const string SelectTile = "Gallop.SingleModeMainViewTrainingFooterItem.SimulateOnClick";
 
@@ -204,6 +258,16 @@ internal static class ActionPlanner
     ], IsEvent: true);
 
     /// <summary>Title of the topmost dialog, or null.</summary>
+    /// <summary>Index in DialogManager._dialogList of the open popup titled <paramref name="title"/>, if any.</summary>
+    public static int? DialogIndex(ManagedReader r, string title)
+    {
+        ulong manager = r.SingletonInstance("Gallop.DialogManager");
+        var dialogs = manager == 0 ? [] : r.ListItems(r.Ptr(manager, "_dialogList"));
+        for (int i = 0; i < dialogs.Count; i++)
+            if (r.Ptr(dialogs[i], "_data") is var data and not 0 && r.String(r.Ptr(data, "Title")) == title) return i;
+        return null;
+    }
+
     public static string? DialogTitle(ManagedReader r)
     {
         ulong manager = r.SingletonInstance("Gallop.DialogManager");
