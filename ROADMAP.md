@@ -92,6 +92,12 @@ Work through these in order, one at a time. Each item says how we know it is don
    Step 1 done: `agent/` (C++ DLL, static CRT, pipe `BlazeUma.Agent.<pid>`) and `BlazeUma.Automation`
    (injector, pipe client); `BlazeUma.Cli agent inject|ping|unload`. Live: injected into the running
    game twice, ping answered, unload removed the module both times, game and reader unaffected.
+   Step 2 done (as a read-only C# walk, not in the agent — the agent would gain nothing from
+   duplicating this): `ButtonFinder` walks `SceneManager._currentViewBase`/`_currentViewController`
+   recursively for `ButtonCommon`-derived fields. `BlazeUma.Cli buttons` prints the paths + address +
+   enable/interactable. Turn 28 live: all 5 home command buttons found by name (`_trainingButton`,
+   `_outingButton`, `_raceRegistButton`, `_skillGetButton`, `_nextMonthButton`=Rest), with
+   `_hospitalButton` correctly non-interactable.
 9. [ ] **Supervised mode**: the bot performs the pick after you press a key; stops on anything unexpected.
 10. [ ] **Auto mode**: full career loop from turn 1 to the results screen, with a stop hotkey.
 

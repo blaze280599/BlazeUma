@@ -70,6 +70,9 @@ stays read-only; the injector is the only part that opens the game with write ac
 dotnet run --project src/BlazeUma.Cli -- agent inject    # load + ping
 dotnet run --project src/BlazeUma.Cli -- agent ping
 dotnet run --project src/BlazeUma.Cli -- agent unload    # agent removes itself
+
+dotnet run --project src/BlazeUma.Cli -- buttons         # list tappable buttons on the current screen
+dotnet run --project src/BlazeUma.Cli -- buttons --all   # include non-tappable
 ```
 
 ## How the reader finds things

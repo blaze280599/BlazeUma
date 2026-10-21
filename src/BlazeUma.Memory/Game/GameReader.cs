@@ -16,6 +16,7 @@ public sealed class GameReader : IDisposable
     private readonly ManagedReader _r;
 
     public Il2CppRuntime Runtime { get; }
+    public ManagedReader ManagedReader => _r;
     public int ProcessId => _process.ProcessId;
 
     /// <summary>Install directory of the running game (contains GameAssembly.dll).</summary>

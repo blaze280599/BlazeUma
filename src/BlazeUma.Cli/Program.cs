@@ -24,6 +24,8 @@ if (args.Length > 0 && args[0] == "agent")
         return 1;
     }
 }
+if (args.Length > 0 && args[0] == "buttons")
+    return ButtonsCommand.Run(args[1..]);
 int? pid = null;
 string? metadata = null, master = null, logDir = "logs";
 double? watch = null;
