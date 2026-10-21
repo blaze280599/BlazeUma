@@ -58,6 +58,20 @@ and the measured outcome at the start of the next turn (stat/energy/mood/SP/fan/
 conditions, skills learned, and a best-guess action such as `training:101`, `outing:9008`, `race`,
 `rest`). Each event shown writes an `event` record. The log is what the estimates get tuned from.
 
+## In-game agent (automation, in progress)
+
+`agent/` is a small C++ DLL loaded into the game; `src/BlazeUma.Automation` injects it and talks to it
+over a local named pipe. Step 1 only answers `ping`; it does not touch the game yet. The memory reader
+stays read-only; the injector is the only part that opens the game with write access.
+
+```powershell
+& "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -S agent -B agent/build -G "Visual Studio 18 2026" -A x64
+& "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build agent/build --config Release
+dotnet run --project src/BlazeUma.Cli -- agent inject    # load + ping
+dotnet run --project src/BlazeUma.Cli -- agent ping
+dotnet run --project src/BlazeUma.Cli -- agent unload    # agent removes itself
+```
+
 ## How the reader finds things
 
 No heap scanning and no hardcoded addresses. Each launch it:

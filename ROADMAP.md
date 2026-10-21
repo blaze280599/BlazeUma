@@ -82,10 +82,16 @@ Work through these in order, one at a time. Each item says how we know it is don
 
 ## Next: act on the advice
 
-8. [ ] **Click automation, design** (code + live)
-   Find the game window, map each action (training buttons, rest, recreation dialog, race list,
-   event choices, skills, confirm/next dialogs) to click targets, using the current screen from memory
-   to know where we are. Input through SendInput on the game window only.
+8. [ ] **Automation, design** (code + live)
+   User chose in-process actions (agent DLL calling the game's own button handlers) over clicks; never
+   writing game values. Design and findings: `research/2026-10-21-automation-design.md` (action entry
+   points found, anti-cheat state checked: only the ObscuredCheatingDetector honeypot runs).
+   IDA pass done: handlers either only preview/open UI or commit inside coroutines, so the agent will use
+   virtual taps on `Gallop.ButtonCommon` (same flow as a real tap) found by name in the scene.
+   Next: agent step 1 (injector + `ping`), then `buttons`, then `tap` (design doc §4b).
+   Step 1 done: `agent/` (C++ DLL, static CRT, pipe `BlazeUma.Agent.<pid>`) and `BlazeUma.Automation`
+   (injector, pipe client); `BlazeUma.Cli agent inject|ping|unload`. Live: injected into the running
+   game twice, ping answered, unload removed the module both times, game and reader unaffected.
 9. [ ] **Supervised mode**: the bot performs the pick after you press a key; stops on anything unexpected.
 10. [ ] **Auto mode**: full career loop from turn 1 to the results screen, with a stop hotkey.
 

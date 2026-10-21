@@ -12,7 +12,18 @@ using BlazeUma.Memory.Il2Cpp;
 // With --watch, repeats until Ctrl+C (snapshots one JSON per line; advice redrawn when it changes).
 // --advise --watch also logs each turn (advice + measured outcome) to DIR/career-*.jsonl (default: logs).
 
-const string Usage = "usage: BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]] [--log DIR | --no-log]";
+const string Usage = "usage: BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]] [--log DIR | --no-log]\n"
+    + "       " + AgentCommand.Usage;
+
+if (args.Length > 0 && args[0] == "agent")
+{
+    try { return AgentCommand.Run(args[1..]); }
+    catch (Exception e) when (e is InvalidOperationException or FileNotFoundException or System.ComponentModel.Win32Exception or TimeoutException or IOException)
+    {
+        Console.Error.WriteLine(e.Message);
+        return 1;
+    }
+}
 int? pid = null;
 string? metadata = null, master = null, logDir = "logs";
 double? watch = null;
