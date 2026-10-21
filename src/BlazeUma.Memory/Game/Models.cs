@@ -42,8 +42,11 @@ public sealed record TrainingPartner(int Position, bool HasHint);
 
 public sealed record DeckCard(int Position, int SupportCardId, int LimitBreak);
 
-/// <summary>Bond gauge; TargetId 1–6 is a deck position, larger ids are scenario NPCs.</summary>
-public sealed record Bond(int TargetId, int Value);
+/// <summary>
+/// Bond gauge; TargetId 1–6 is a deck position, larger ids are scenario NPCs. OutingUnlocked marks a friend
+/// card whose outing appears in the Recreation dialog; OutingStep is its chain progress (0–5 chevrons).
+/// </summary>
+public sealed record Bond(int TargetId, int Value, int CharaId, bool OutingUnlocked, int OutingStep);
 
 public sealed record AcquiredSkill(int SkillId, int Level);
 

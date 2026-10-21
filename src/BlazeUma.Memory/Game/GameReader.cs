@@ -148,7 +148,8 @@ public sealed class GameReader : IDisposable
                 .Select(c => new DeckCard(_r.ObscuredInt(c, "Position"), _r.ObscuredInt(c, "SupportCardId"), _r.ObscuredInt(c, "LimitBreakCount")))
                 .ToList(),
             Bonds: _r.ListItems(_r.Ptr(ch, "_evaluationList"))
-                .Select(e => new Bond(_r.ObscuredInt(e, "_targetId"), _r.ObscuredInt(e, "_value")))
+                .Select(e => new Bond(_r.ObscuredInt(e, "_targetId"), _r.ObscuredInt(e, "_value"), _r.ObscuredInt(e, "_guestCharaId"),
+                    _r.ObscuredBool(e, "_isOuting"), _r.ObscuredInt(e, "_storyStep")))
                 .ToList(),
             Skills: _r.ListItems(_r.Ptr(ch, "_acquiredSkillList"))
                 .Select(s => new AcquiredSkill(_r.ObscuredInt(s, "_masterId"), _r.ObscuredInt(s, "_level")))

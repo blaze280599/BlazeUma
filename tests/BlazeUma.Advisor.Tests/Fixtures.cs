@@ -58,7 +58,7 @@ internal sealed class FakeGameData : IGameData
 internal static class Snapshots
 {
     public static Character Daiwa(int energy = 80, Mood mood = Mood.Normal, Stats? stats = null, int fans = 800,
-        IReadOnlyList<SkillHint>? hints = null) => new(
+        IReadOnlyList<SkillHint>? hints = null, bool lightHelloOuting = false) => new(
         CardId: 100901, ScenarioId: 1, RouteId: 3, TalentLevel: 1,
         Stats: stats ?? new Stats(200, 100, 140, 140, 110),
         MaxStats: new Stats(1404, 1404, 1408, 1404, 1404),
@@ -66,7 +66,9 @@ internal static class Snapshots
         RunningStyle: 2,
         Aptitudes: new Aptitudes(7, 2, 3, 7, 7, 7, 7, 7, 3, 1),
         RouteRaceIds: [22, 23, 30, 31], ReservedRaceProgramId: 0, Conditions: [],
-        Deck: [], Bonds: [new Bond(1, 20), new Bond(2, 90)], Skills: [new AcquiredSkill(10091, 2)],
+        Deck: [],
+        Bonds: [new Bond(1, 20, 1084, false, 0), new Bond(2, 90, 1002, false, 0), new Bond(6, 44, 9008, lightHelloOuting, 0)],
+        Skills: [new AcquiredSkill(10091, 2)],
         Hints: hints ?? []);
 
     public static Command Train(int id, int failure, int energyCost, params (string Param, int Value)[] gains) => new(

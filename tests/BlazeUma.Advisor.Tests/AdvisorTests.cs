@@ -21,7 +21,16 @@ public class AdvisorTests
     public void AwfulMood_PrefersRecreation()
     {
         var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(energy: 70, mood: Mood.Awful)));
-        Assert.Equal("Recreation", advice.Best!.Label);
+        Assert.Equal("Recreation: trainee", advice.Best!.Label);
+        Assert.DoesNotContain(advice.Options, o => o.Label == "Recreation: Light Hello");
+    }
+
+    [Fact]
+    public void UnlockedFriendOuting_IsPreferredOverSoloRecreation()
+    {
+        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(energy: 70, mood: Mood.Awful, lightHelloOuting: true)));
+        Assert.Equal("Recreation: Light Hello", advice.Best!.Label);
+        Assert.Contains(advice.Options, o => o.Label == "Recreation: trainee");
     }
 
     [Fact]

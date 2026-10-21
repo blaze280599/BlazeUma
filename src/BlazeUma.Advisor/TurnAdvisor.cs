@@ -22,7 +22,7 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
             {
                 CommandType.Training => Training(command),
                 CommandType.Rest => Rest(),
-                CommandType.Recreation => Recreation(command),
+                CommandType.Recreation => null,
                 CommandType.Infirmary => Infirmary(),
                 CommandType.Race => new RaceEvaluator(ctx, values).BestPredicted() is { } race
                     ? race with { Label = $"Race: {race.Label}" }
@@ -31,8 +31,10 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
             };
             if (option is not null) options.Add(option);
         }
-        // Recreation variants (normal / friend outing) can both be listed; keep the better one.
-        return options.GroupBy(o => o.Label).Select(g => g.MaxBy(o => o.Score)!).OrderByDescending(o => o.Score).ToList();
+        // The Recreation button opens one dialog listing the trainee and any friend outings (commands 301 / 390).
+        if (ctx.Snapshot.Commands?.Any(c => c.Type == CommandType.Recreation && c.Enabled) == true)
+            options.AddRange(Recreation());
+        return options.OrderByDescending(o => o.Score).ToList();
     }
 
     private ScoredOption Training(Command command)
@@ -76,17 +78,35 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         return new ScoredOption("Rest", v, [$"energy {ctx.Character.Energy} +~{ValueModel.ExpectedRestEnergy} ({v:+0.0})"]);
     }
 
-    private ScoredOption Recreation(Command command)
+    /// <summary>Friend outings: chain events (5 steps) usually add stats or hints; estimated, not measured.</summary>
+    private const double OutingChainStepValue = 8, OutingEnergy = 20, OutingBond = 5;
+
+    private IEnumerable<ScoredOption> Recreation()
     {
-        double mood = values.Mood(1), energy = values.Energy(10);
-        var reasons = new List<string> { $"mood {ctx.Character.Mood} +1 ({mood:+0.0})", $"energy +~10 ({energy:+0.0})" };
-        double score = mood + energy;
-        if (ctx.NextGoal is { } goal && goal.Turn - ctx.Turn <= 3 && ctx.Character.Mood < Mood.Normal)
+        double mood = values.Mood(1);
+        double raceBonus = ctx.NextGoal is { } goal && goal.Turn - ctx.Turn <= 3 && ctx.Character.Mood < Mood.Normal ? 10 : 0;
+
+        double soloEnergy = values.Energy(10);
+        var solo = new List<string> { $"mood {ctx.Character.Mood} +1 ({mood:+0.0})", $"energy +~10 ({soloEnergy:+0.0})" };
+        if (raceBonus > 0) solo.Add($"{ctx.NextGoal!.Name} soon with low mood (+10)");
+        yield return new ScoredOption("Recreation: trainee", mood + soloEnergy + raceBonus, solo);
+
+        foreach (var friend in ctx.Character.Bonds.Where(b => b.OutingUnlocked))
         {
-            score += 10;
-            reasons.Add($"{goal.Name} in {goal.Turn - ctx.Turn} turn(s) with low mood (+10)");
+            string name = ctx.Data.CharacterName(friend.CharaId) ?? $"card {friend.TargetId}";
+            double energy = values.Energy(OutingEnergy);
+            double chain = friend.OutingStep < 5 ? OutingChainStepValue : 0;
+            double bond = friend.Value < 100 ? OutingBond * 0.5 : 0;
+            var reasons = new List<string>
+            {
+                $"mood {ctx.Character.Mood} +1 ({mood:+0.0})",
+                $"energy +~{OutingEnergy} ({energy:+0.0})",
+                $"bond +~{OutingBond} ({bond:+0.0})",
+                $"chain event {friend.OutingStep + 1}/5 ({chain:+0.0}, estimate)",
+            };
+            if (raceBonus > 0) reasons.Add($"{ctx.NextGoal!.Name} soon with low mood (+10)");
+            yield return new ScoredOption($"Recreation: {name}", mood + energy + chain + bond + raceBonus, reasons);
         }
-        return new ScoredOption("Recreation", score, reasons);
     }
 
     private ScoredOption Infirmary()
