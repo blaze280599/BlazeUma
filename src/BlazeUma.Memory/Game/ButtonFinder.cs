@@ -37,6 +37,17 @@ public sealed class ButtonFinder(ManagedReader reader)
             Walk(reader.Ptr(scene, "_currentViewController"), "Controller", 0, maxDepth, buttonClass, found, visited);
         }
 
+        // Header/footer UI (footer Back button, Skip/Quick) is owned by UIManager, not by the view.
+        ulong ui = reader.SingletonInstance("Gallop.UIManager");
+        if (ui != 0)
+        {
+            foreach (string field in new[] { "_footerBackButton", "_footer", "_singleModeFooter" })
+            {
+                try { Walk(reader.Ptr(ui, field), $"UI.{field}", 0, maxDepth, buttonClass, found, visited); }
+                catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { }
+            }
+        }
+
         ulong dialogManager = reader.SingletonInstance("Gallop.DialogManager");
         if (dialogManager != 0)
         {

@@ -31,6 +31,7 @@ internal static class AgentCommand
         ["Hospital"] = "hospitalButton",
         ["Hint"] = "AdviceButton",
         ["Details"] = "DetailButton",
+        ["Back"] = "footerBackButton",
         // Dialog buttons: a single-button popup uses _centerButton; two-button popups use _left and _right.
         ["Close"] = "centerButton",
         ["OK"] = "centerButton",
