@@ -14,6 +14,15 @@ public sealed record TrainingTile(int Index, int CommandId, bool IsSelected, ulo
 /// </summary>
 public static class TrainingMenu
 {
+    /// <summary>The training menu is open (<c>TrainingController.IsInTraining</c>); null when it cannot be told.</summary>
+    public static bool? IsOpen(ManagedReader r)
+    {
+        ulong scene = r.SingletonInstance("Gallop.SceneManager");
+        ulong controller = scene == 0 ? 0 : r.Ptr(scene, "_currentViewController");
+        ulong training = controller == 0 ? 0 : r.Ptr(controller, "TrainingController");
+        return training == 0 ? null : r.Bool(training, "IsInTraining");
+    }
+
     public static IReadOnlyList<TrainingTile> ReadTiles(ManagedReader r)
     {
         ulong scene = r.SingletonInstance("Gallop.SceneManager");

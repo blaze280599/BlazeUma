@@ -81,9 +81,11 @@ internal static class ActionPlanner
     private static ActionPlan Training(string action, int commandId)
     {
         string name = Trainings.First(t => t.Value == commandId).Key;
+        var open = Home("Open the training menu", "_trainingButton", WaitFor.TrainingMenu);
         return new ActionPlan(action,
         [
-            Home("Open the training menu", "_trainingButton", WaitFor.TrainingMenu),
+            // Already open when resumed part-way (a pause, or a select that did not take).
+            open with { Resolve = g => TrainingMenu.IsOpen(g.ManagedReader) == true ? StepTarget.Skip("the training menu is already open") : open.Resolve(g) },
             new PlanStep($"Select the {name} tile", g =>
             {
                 var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => t.CommandId == commandId);

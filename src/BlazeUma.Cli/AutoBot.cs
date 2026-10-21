@@ -24,6 +24,10 @@ internal sealed class AutoBot(BotControl control)
     private const int MaxActionsPerTurn = 8;
     /// <summary>Unreadable snapshots in a row (normal for a moment while screens change) before the bot asks for help.</summary>
     private const int MaxReadFailures = 20;
+    /// <summary>Taps of a select (training tile, race row) before giving up when the game does not take it.</summary>
+    private const int MaxSelectTaps = 3;
+    /// <summary>The training tiles slide in after the menu reports open; a tap before that can be dropped.</summary>
+    private static readonly TimeSpan MenuAnimation = TimeSpan.FromMilliseconds(600);
 
     private enum Outcome { Done, Interrupted, NeedsYou }
 
@@ -207,17 +211,22 @@ internal sealed class AutoBot(BotControl control)
         for (int i = 0; i < plan.Steps.Count && !resume; i++)
         {
             var step = plan.Steps[i];
-            var target = step.Resolve(reader);
-            if (target.SkipReason is not null) continue;
-            if (target.Error is not null) { problem = $"{plan.Action}, step {i + 1} ({step.Description}): {target.Error}."; return Outcome.NeedsYou; }
+            // A select tapped while the menu is still animating in can be dropped by the game; its effect can be
+            // checked, so tap again. Other taps are not repeated (a second Rest or training tap could act twice).
+            int attempts = step.Wait is WaitFor.TileSelected or WaitFor.RaceSelected ? MaxSelectTaps : 1;
+            for (int attempt = 1; attempt <= attempts; attempt++)
+            {
+                var target = step.Resolve(reader);
+                if (target.SkipReason is not null) break;
+                if (target.Error is not null) { problem = $"{plan.Action}, step {i + 1} ({step.Description}): {target.Error}."; return Outcome.NeedsYou; }
 
-            Console.WriteLine(ConsoleUi.Dim($"   • {step.Description}"));
-            string reply = target.Method is { } m
-                ? tapper.Invoke(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..])
-                : tapper.Tap(target.Button);
-            if (!reply.StartsWith("ok")) { problem = $"Tap failed ({step.Description}): {reply}"; return Outcome.NeedsYou; }
-
-            WaitAfter(reader, step, startTurn);
+                Console.WriteLine(ConsoleUi.Dim($"   • {step.Description}" + (attempt > 1 ? $" (again, try {attempt})" : "")));
+                string reply = target.Method is { } m
+                    ? tapper.Invoke(target.Button, m[..m.LastIndexOf('.')], m[(m.LastIndexOf('.') + 1)..])
+                    : tapper.Tap(target.Button);
+                if (!reply.StartsWith("ok")) { problem = $"Tap failed ({step.Description}): {reply}"; return Outcome.NeedsYou; }
+                if (WaitAfter(reader, step, startTurn)) break;
+            }
             if (TurnNow(reader) > startTurn || (!plan.IsEvent && EventShowing(reader))) return Outcome.Done;
         }
 
@@ -275,27 +284,29 @@ internal sealed class AutoBot(BotControl control)
         var name => name.TrimStart('_'),
     };
 
-    private static void WaitAfter(GameReader reader, PlanStep step, int startTurn)
+    /// <summary>Waits for what <paramref name="step"/>'s tap should lead to; false if it did not happen in time.</summary>
+    private static bool WaitAfter(GameReader reader, PlanStep step, int startTurn)
     {
         var r = reader.ManagedReader;
         switch (step.Wait)
         {
-            case WaitFor.TrainingMenu: WaitUntil(() => InTraining(r) ?? false, TimeSpan.FromSeconds(5)); break;
+            case WaitFor.TrainingMenu:
+                bool open = WaitUntil(() => TrainingMenu.IsOpen(r) ?? false, TimeSpan.FromSeconds(5));
+                Thread.Sleep(MenuAnimation);   // the tiles only take taps once they have slid in
+                return open;
             case WaitFor.TileSelected:
-                WaitUntil(() => TrainingMenu.ReadTiles(r).Any(t => t.CommandId == step.CommandId && t.IsSelected), TimeSpan.FromSeconds(5));
-                break;
-            case WaitFor.Dialog: WaitUntil(() => DialogButtons(r).Count > 0 || TurnNow(reader) > startTurn, TimeSpan.FromSeconds(5)); break;
+                return WaitUntil(() => TrainingMenu.ReadTiles(r).Any(t => t.CommandId == step.CommandId && t.IsSelected), TimeSpan.FromSeconds(3));
+            case WaitFor.Dialog: return WaitUntil(() => DialogButtons(r).Count > 0 || TurnNow(reader) > startTurn, TimeSpan.FromSeconds(5));
             case WaitFor.TurnAdvance:
-                WaitUntil(() => TurnNow(reader) > startTurn || EventShowing(reader) || DialogButtons(r).Count > 0, TimeSpan.FromSeconds(90));
-                break;
-            case WaitFor.RaceList: WaitUntil(() => RaceEntryScreen.Read(r) is not null, TimeSpan.FromSeconds(8)); break;
+                return WaitUntil(() => TurnNow(reader) > startTurn || EventShowing(reader) || DialogButtons(r).Count > 0, TimeSpan.FromSeconds(90));
+            case WaitFor.RaceList: return WaitUntil(() => RaceEntryScreen.Read(r) is not null, TimeSpan.FromSeconds(8));
             case WaitFor.RaceSelected:
-                WaitUntil(() => RaceEntryScreen.Read(r) is { } list && list.SelectedProgramId ==
-                    (step.CommandId != 0 ? step.CommandId : list.Rows.FirstOrDefault(x => x.IsGoal && x.EntryState == 0)?.ProgramId), TimeSpan.FromSeconds(5));
-                break;
-            case WaitFor.DialogClosed: WaitUntil(() => DialogButtons(r).Count == 0, TimeSpan.FromSeconds(5)); break;
-            case WaitFor.EventDone: WaitUntil(() => !EventShowing(reader), TimeSpan.FromSeconds(60)); break;
-            case WaitFor.LeftRaceList: WaitUntil(() => RaceEntryScreen.Read(r) is null || DialogButtons(r).Count > 0, TimeSpan.FromSeconds(10)); break;
+                return WaitUntil(() => RaceEntryScreen.Read(r) is { } list && list.SelectedProgramId ==
+                    (step.CommandId != 0 ? step.CommandId : list.Rows.FirstOrDefault(x => x.IsGoal && x.EntryState == 0)?.ProgramId), TimeSpan.FromSeconds(3));
+            case WaitFor.DialogClosed: return WaitUntil(() => DialogButtons(r).Count == 0, TimeSpan.FromSeconds(5));
+            case WaitFor.EventDone: return WaitUntil(() => !EventShowing(reader), TimeSpan.FromSeconds(60));
+            case WaitFor.LeftRaceList: return WaitUntil(() => RaceEntryScreen.Read(r) is null || DialogButtons(r).Count > 0, TimeSpan.FromSeconds(10));
+            default: return true;
         }
     }
 
@@ -352,14 +363,6 @@ internal sealed class AutoBot(BotControl control)
         // _inputBlock is an invisible full-screen blocker; tapping it can count as tapping outside (cancel).
         new ButtonFinder(r).FromCurrentScene()
             .Where(b => b.CanTap && b.Path.StartsWith("Dialog[") && !b.Path.EndsWith("_inputBlock")).ToList();
-
-    private static bool? InTraining(ManagedReader r)
-    {
-        ulong scene = r.SingletonInstance("Gallop.SceneManager");
-        ulong controller = scene == 0 ? 0 : r.Ptr(scene, "_currentViewController");
-        ulong training = controller == 0 ? 0 : r.Ptr(controller, "TrainingController");
-        return training == 0 ? null : r.Bool(training, "IsInTraining");
-    }
 
     private static int TurnNow(GameReader reader)
     {
