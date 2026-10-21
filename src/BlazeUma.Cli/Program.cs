@@ -7,12 +7,14 @@ using BlazeUma.Memory;
 using BlazeUma.Memory.Game;
 using BlazeUma.Memory.Il2Cpp;
 
-// BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]]
+// BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]] [--log DIR | --no-log]
 // Prints a read-only career snapshot as JSON, or with --advise the recommended action.
 // With --watch, repeats until Ctrl+C (snapshots one JSON per line; advice redrawn when it changes).
+// --advise --watch also logs each turn (advice + measured outcome) to DIR/career-*.jsonl (default: logs).
 
+const string Usage = "usage: BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]] [--log DIR | --no-log]";
 int? pid = null;
-string? metadata = null, master = null;
+string? metadata = null, master = null, logDir = "logs";
 double? watch = null;
 bool advise = false, verbose = false;
 for (int i = 0; i < args.Length; i++)
@@ -25,8 +27,10 @@ for (int i = 0; i < args.Length; i++)
         case "--watch": watch = double.Parse(args[++i]); break;
         case "--advise": advise = true; break;
         case "--verbose": verbose = true; break;
+        case "--log": logDir = args[++i]; break;
+        case "--no-log": logDir = null; break;
         default:
-            Console.Error.WriteLine("usage: BlazeUma.Cli [--pid N] [--metadata PATH] [--master PATH] [--watch SECONDS] [--advise [--verbose]]");
+            Console.Error.WriteLine(Usage);
             return 2;
     }
 }
@@ -50,6 +54,9 @@ try
     var formatter = AdviceFormatter.ForConsole(verbose);
     bool redraw = watch is not null && !Console.IsOutputRedirected;
     Console.OutputEncoding = System.Text.Encoding.UTF8;
+    var log = advisor is not null && watch is not null && logDir is not null
+        ? new CareerLog(logDir, new JsonSerializerOptions(json) { WriteIndented = false })
+        : null;
     Advice? lastAdvice = null;
     do
     {
@@ -63,10 +70,12 @@ try
             else
             {
                 var current = advisor.Advise(snapshot);
+                log?.Observe(snapshot, current);
                 if (lastAdvice is null || !SameAdvice(current, lastAdvice))
                 {
                     if (redraw) Console.Clear();
                     Console.WriteLine(formatter.Format(current, snapshot.ReadAt));
+                    if (log?.CurrentPath is { } path) Console.WriteLine(formatter.Footer($"logging to {path}"));
                 }
                 lastAdvice = current;
             }

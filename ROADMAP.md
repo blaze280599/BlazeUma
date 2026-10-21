@@ -20,14 +20,19 @@ Work through these in order, one at a time. Each item says how we know it is don
    scales the chance to place, fan need only counts as urgent when few suitable race turns remain before the
    goal, and the race screen compares racing with the best non-race action ("Go back: …").
 
-3. [ ] **Turn log** (code)
+3. [x] **Turn log** (code)
    Append every snapshot + advice + what actually happened next turn to a JSONL file per career.
    Needed to measure estimates (outings, rest, race rewards) and to tune `ValueModel` later.
    *Done when:* `--advise --watch` writes `logs/career-<date>.jsonl` with one entry per turn.
+   Result (turns 16–17): two turn records and two event records; inferred actions right
+   (`outing:9008`, `training:101`). Both events' predicted effects matched the measured outcome exactly
+   (Regolith bottom: Spd +20, Gut +20, mood +1, bond +5; Scoop top: Sta +10, Etsuko +5).
 
 4. [ ] **Event advice, live** (live: next event with choices on screen)
    Confirm `LooksActive` turns on, the title is right, and the effects match the in-game Effects
    popup. Also check an event with no choices does not produce stale advice.
+   Progress: `LooksActive` was true for both logged events on turns 16–17 and false back on the home
+   screen; titles and effects were right. Still to check: a no-choice event.
    *Done when:* two or more events checked, `LooksActive` confirmed or replaced.
 
 5. [ ] **Skill screen advice, live** (live: Skills screen, ideally the turn before Tulip Sho)
@@ -38,6 +43,9 @@ Work through these in order, one at a time. Each item says how we know it is don
    Friend outing energy/mood, rest energy, race skill points and stats per grade. Replace the
    guesses in `TurnAdvisor` / `RaceEvaluator` with measured values.
    *Done when:* each estimate in the code cites a measurement.
+   Measured so far: Light Hello outing = mood +1 and bond +5 (twice). Energy not measurable yet (was
+   full). The chain event at step 3 was worth far more than the +8 estimate (Spd +20 / Gut +20, or
+   energy +80), so `OutingChainStepValue` is likely too low.
 
 7. [ ] **Game restart** (live: close and reopen the game mid-career)
    The reader should reattach with no changes.

@@ -49,6 +49,14 @@ dotnet test BlazeUma.slnx
 
 All constants are heuristics in `ValueModel` and the advisors, meant to be tuned.
 
+## Turn log
+
+`--advise --watch` appends to `logs/career-<cardId>-<time>.jsonl` (change with `--log DIR`, disable
+with `--no-log`). Each completed turn writes a `turn` record: the start-of-turn snapshot, the advice,
+and the measured outcome at the start of the next turn (stat/energy/mood/SP/fan/bond changes,
+conditions, skills learned, and a best-guess action such as `training:101`, `outing:9008`, `race`,
+`rest`). Each event shown writes an `event` record. The log is what the estimates get tuned from.
+
 ## How the reader finds things
 
 No heap scanning and no hardcoded addresses. Each launch it:

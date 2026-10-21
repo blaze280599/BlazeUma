@@ -8,3 +8,4 @@ __pycache__/
 # Game data copies and dumps are proprietary and machine-specific
 *.mdb
 dumps/
+logs/

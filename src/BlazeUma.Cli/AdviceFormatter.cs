@@ -28,6 +28,8 @@ internal sealed class AdviceFormatter(bool verbose, bool color, int width)
 
     private string Fit(string text, int indent) => text.Length + indent <= width ? text : text[..Math.Max(0, width - indent - 1)] + "…";
 
+    public string Footer(string text) => Dim(" " + Fit(text, 1));
+
     public string Format(Advice advice, DateTimeOffset readAt)
     {
         var sb = new StringBuilder();
