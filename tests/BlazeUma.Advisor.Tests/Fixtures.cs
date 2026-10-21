@@ -104,6 +104,18 @@ internal static class Snapshots
         true, turn, 3, lastTraining, character, commands ?? StandardCommands(), story, choices,
         choicesFor ?? story?.EventId, null, null, []);
 
+    /// <summary>Summer camp's home screen as read live (Classic Early Jul): 60x trainings, Rest &amp; Recreation as 304, Rest off.</summary>
+    public static IReadOnlyList<Command> CampCommands() =>
+    [
+        Train(601, 0, -24, ("speed", 24), ("power", 11), ("skillPoints", 5)),
+        Train(602, 0, -25, ("stamina", 17), ("guts", 12), ("skillPoints", 5)),
+        Train(603, 0, -26, ("stamina", 11), ("power", 18), ("skillPoints", 5)),
+        Train(604, 0, -28, ("speed", 7), ("power", 6), ("guts", 18), ("skillPoints", 4)),
+        Train(605, 0, 5, ("speed", 5), ("wit", 16), ("skillPoints", 6)),
+        Simple(CommandType.Recreation, 304),
+        Simple(CommandType.Rest, 701) with { Enabled = false },
+    ];
+
     public static IReadOnlyList<Command> StandardCommands(int failure = 0) =>
     [
         Train(TrainingIds.Speed, failure, -21, ("speed", 12), ("power", 6), ("skillPoints", 4)),

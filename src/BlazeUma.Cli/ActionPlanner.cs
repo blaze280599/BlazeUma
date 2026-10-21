@@ -1,3 +1,4 @@
+using BlazeUma.Advisor;
 using BlazeUma.Memory.Game;
 using BlazeUma.Memory.Il2Cpp;
 
@@ -75,6 +76,9 @@ internal static class ActionPlanner
             return EventChoice(action, choice);
         if (action.Equals("Rest", StringComparison.OrdinalIgnoreCase))
             return new ActionPlan(action, [Home("Tap Rest", "_nextMonthButton", WaitFor.Dialog)]);
+        // Summer camp: Rest (_nextMonthButton) is disabled and this button takes the Recreation slot.
+        if (action.Equals(TurnAdvisor.RestAndRecreationLabel, StringComparison.OrdinalIgnoreCase))
+            return new ActionPlan(action, [Home("Tap Rest & Recreation", "_outingSummerButton", WaitFor.Dialog)]);
         if (action.StartsWith("Recreation", StringComparison.OrdinalIgnoreCase))
             return Recreation(action, friendName);
         if (action.Equals("Infirmary", StringComparison.OrdinalIgnoreCase))
@@ -92,7 +96,7 @@ internal static class ActionPlanner
             open with { Resolve = g => TrainingMenu.IsOpen(g.ManagedReader) == true ? StepTarget.Skip("the training menu is already open") : open.Resolve(g) },
             new PlanStep($"Select the {name} tile", g =>
             {
-                var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => t.CommandId == commandId);
+                var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => TrainingIds.Base(t.CommandId) == commandId);
                 if (tile is null) return StepTarget.Fail($"no {name} tile on screen");
                 // A tile selects on press, not on click: m_OnClick does not select it (checked live, turn 35).
                 // SimulateOnClick is the item's own press handler (same code as OnDown → footer OnDownItem).
@@ -105,14 +109,14 @@ internal static class ActionPlanner
             // (Select checks GallopStandaloneInputModule.isMouseReact), so press as a mouse right before the click.
             new PlanStep($"Press the selected {name} tile", g =>
             {
-                var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => t.CommandId == commandId);
+                var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => TrainingIds.Base(t.CommandId) == commandId);
                 if (tile is null) return StepTarget.Fail($"no {name} tile on screen");
                 if (!tile.IsSelected) return StepTarget.Fail($"{name} is not the selected tile");
                 return new StepTarget(tile.Item, $"TrainingFooter._items[{tile.Index}] ({name}, selected)", Method: SelectTile, AsMouse: true);
             }, WaitFor.Nothing, commandId),
             new PlanStep($"Do {name} training (tap the selected tile)", g =>
             {
-                var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => t.CommandId == commandId);
+                var tile = TrainingMenu.ReadTiles(g.ManagedReader).FirstOrDefault(t => TrainingIds.Base(t.CommandId) == commandId);
                 if (tile is null) return StepTarget.Fail($"no {name} tile on screen");
                 // Tapping a tile that is not selected only selects it; refuse rather than mis-train.
                 if (!tile.IsSelected) return StepTarget.Fail($"{name} is not the selected tile");

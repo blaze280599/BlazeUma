@@ -21,6 +21,15 @@ public static class ParamIds
 public static class TrainingIds
 {
     public const int Speed = 101, Power = 102, Guts = 103, Stamina = 105, Wit = 106;
+
+    /// <summary>
+    /// The usual id for a training command. Summer camp has its own ids in another order (read live, Classic
+    /// Early Jul): 601 Speed, 602 Stamina, 603 Power, 604 Guts, 605 Wit.
+    /// </summary>
+    public static int Base(int commandId) => commandId switch
+    {
+        601 => Speed, 602 => Stamina, 603 => Power, 604 => Guts, 605 => Wit, _ => commandId,
+    };
 }
 
 public sealed record Stats(int Speed, int Stamina, int Power, int Guts, int Wit);

@@ -31,13 +31,18 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
             if (option is not null) options.Add(option);
         }
         // The Recreation button opens one dialog listing the trainee and any friend outings (commands 301 / 390).
+        // In summer camp Rest is disabled and the Recreation command (304) is Rest & Recreation instead.
         if (ctx.Snapshot.Commands?.Any(c => c.Type == CommandType.Recreation && c.Enabled) == true)
-            options.AddRange(Recreation());
+        {
+            if (ctx.InSummerCamp) options.Add(RestAndRecreation());
+            else options.AddRange(Recreation());
+        }
         return options.OrderByDescending(o => o.Score).ToList();
     }
 
     private ScoredOption Training(Command command)
     {
+        int trainingId = TrainingIds.Base(command.Id);   // summer camp's 60x ids → the usual ones
         var reasons = new List<string>();
         double gains = 0;
         foreach (var (param, gain) in command.Gains)
@@ -53,7 +58,7 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         var names = new List<string>();
         foreach (var partner in command.Partners)
         {
-            var (value, label) = PartnerValue(partner, command.Id);
+            var (value, label) = PartnerValue(partner, trainingId);
             bonds += value;
             names.Add(label);
         }
@@ -67,7 +72,7 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         if (command.FailureRate > 0) reasons.Add($"{command.FailureRate}% failure (-{risk:0.0})");
 
         double score = (1 - p) * (gains + bonds) - p * values.FailureLoss + energy;
-        string name = TrainingNames.GetValueOrDefault(command.Id, $"Training {command.Id}");
+        string name = TrainingNames.GetValueOrDefault(trainingId, $"Training {command.Id}");
         return new ScoredOption($"Train {name}", score, reasons);
     }
 
@@ -120,7 +125,7 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         return (DuelChance * (WinChance * win + (1 - WinChance) * loss), "Happy Meek duel?");
     }
 
-    public static int TrainingStat(int trainingId) => trainingId switch
+    public static int TrainingStat(int trainingId) => TrainingIds.Base(trainingId) switch
     {
         TrainingIds.Speed => ParamIds.Speed, TrainingIds.Stamina => ParamIds.Stamina, TrainingIds.Power => ParamIds.Power,
         TrainingIds.Guts => ParamIds.Guts, TrainingIds.Wit => ParamIds.Wit, _ => 0,
@@ -128,12 +133,31 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
 
     private ScoredOption Rest()
     {
-        if (ctx.InSummerCamp) return RestAndRecreation();
         double v = values.Energy(ValueModel.ExpectedRestEnergy);
-        return new ScoredOption("Rest", v, [$"energy {ctx.Character.Energy} +~{ValueModel.ExpectedRestEnergy} ({v:+0.0})"]);
+        var reasons = new List<string> { $"energy {ctx.Character.Energy} +~{ValueModel.ExpectedRestEnergy} ({v:+0.0})" };
+
+        // uma.guide: enter summer camp with high energy. Low energy now means a rest during camp later, which
+        // costs a level-5 training instead of an ordinary one; how low decides how likely that rest is.
+        if (ctx.TurnsUntilSummerCamp is 1 or 2)
+        {
+            int max = ctx.Character.MaxEnergy;
+            double likely = Math.Clamp((0.7 * max - ctx.Character.Energy) / (0.4 * max), 0, 1);
+            double premium = likely * values.CampTrainingPremium();
+            if (premium > 0)
+            {
+                v += premium;
+                reasons.Add($"summer camp in {ctx.TurnsUntilSummerCamp}: rest now, not on a level-5 camp turn (+{premium:0.0})");
+            }
+        }
+        return new ScoredOption("Rest", v, reasons);
     }
 
-    /// <summary>Summer camp's Rest: +40 energy, +1 mood and cures all general bad conditions (uma.guide).</summary>
+    public const string RestAndRecreationLabel = "Rest & Recreation";
+
+    /// <summary>
+    /// Summer camp's Rest & Recreation (the Recreation command, 304, while Rest is disabled): +40 energy, +1 mood
+    /// and cures all general bad conditions (uma.guide).
+    /// </summary>
     private ScoredOption RestAndRecreation()
     {
         double energy = values.Energy(40), mood = values.Mood(1);
@@ -144,7 +168,7 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
             $"mood {ctx.Character.Mood} +1 ({mood:+0.0})",
         };
         if (bad.Count > 0) reasons.Add($"cures {string.Join(", ", bad.Select(c => c!.Name))} (+{25 * bad.Count})");
-        return new ScoredOption("Rest", energy + mood + 25 * bad.Count, reasons);
+        return new ScoredOption(RestAndRecreationLabel, energy + mood + 25 * bad.Count, reasons);
     }
 
     /// <summary>Friend outings: chain events (5 steps) usually add stats or hints; estimated, not measured.</summary>

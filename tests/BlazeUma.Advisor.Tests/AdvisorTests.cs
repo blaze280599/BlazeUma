@@ -331,15 +331,34 @@ public class UmaGuideRuleTests
     }
 
     [Fact]
-    public void RestInCamp_IsRestAndRecreation()
+    public void Camp_UsesItsOwnCommandIds_AndRestAndRecreation()
     {
-        var rest = Rank(Context(turn: 38, energy: 40, mood: Mood.Bad)).Single(o => o.Label == "Rest");
+        var camp = Rank(Context(turn: 38, energy: 40, mood: Mood.Bad, commands: Snapshots.CampCommands()));
+        Assert.Equal(new HashSet<string> { "Train Speed", "Train Stamina", "Train Power", "Train Guts", "Train Wit" },
+            camp.Where(o => o.Label.StartsWith("Train ")).Select(o => o.Label).ToHashSet());
+        Assert.DoesNotContain(camp, o => o.Label.StartsWith("Train Training") || o.Label == "Rest" || o.Label.StartsWith("Recreation"));
+
+        var rest = camp.Single(o => o.Label == TurnAdvisor.RestAndRecreationLabel);
         var normal = Rank(Context(turn: 30, energy: 40, mood: Mood.Bad)).Single(o => o.Label == "Rest");
         Assert.Contains("Rest & Recreation", rest.Reasons[0]);
         Assert.True(rest.Score > normal.Score);
     }
 
     private static IReadOnlyList<ScoredOption> Rank(CareerContext ctx) => new TurnAdvisor(ctx, new ValueModel(ctx)).Rank();
+
+    [Fact]
+    public void LowEnergyLastTurnBeforeCamp_RestsRatherThanTrainingWit()
+    {
+        // Live turn 36: energy 32, risky trainings, Wit narrowly beat Rest before the camp premium.
+        var before = Rank(Context(turn: 36, energy: 32, mood: Mood.Great, commands: Snapshots.StandardCommands(failure: 30)));
+        Assert.Equal("Rest", before[0].Label);
+        Assert.Contains(before[0].Reasons, r => r.Contains("summer camp in 1"));
+
+        var ordinary = Rank(Context(turn: 30, energy: 32, mood: Mood.Great)).Single(o => o.Label == "Rest");
+        Assert.DoesNotContain(ordinary.Reasons, r => r.Contains("summer camp"));
+        var high = Rank(Context(turn: 36, energy: 90, mood: Mood.Great)).Single(o => o.Label == "Rest");
+        Assert.DoesNotContain(high.Reasons, r => r.Contains("summer camp"));
+    }
 
     private static double SpeedWith(int turn, params int[] partners)
     {

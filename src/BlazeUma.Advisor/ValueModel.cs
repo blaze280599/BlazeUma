@@ -162,6 +162,23 @@ public sealed class ValueModel
         [TrainingIds.Wit] = [(ParamIds.Speed, 2), (ParamIds.Wit, 12), (ParamIds.SkillPoints, 5)],
     };
 
+    /// <summary>URA level-5 base gains (every facility during summer camp), same source as <see cref="BaseTraining"/>.</summary>
+    private static readonly IReadOnlyDictionary<int, (int Param, int Amount)[]> CampTraining = new Dictionary<int, (int, int)[]>
+    {
+        [TrainingIds.Speed] = [(ParamIds.Speed, 15), (ParamIds.Power, 8), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Stamina] = [(ParamIds.Stamina, 14), (ParamIds.Guts, 8), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Power] = [(ParamIds.Stamina, 8), (ParamIds.Power, 13), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Guts] = [(ParamIds.Speed, 6), (ParamIds.Power, 5), (ParamIds.Guts, 13), (ParamIds.SkillPoints, 4)],
+        [TrainingIds.Wit] = [(ParamIds.Speed, 4), (ParamIds.Wit, 14), (ParamIds.SkillPoints, 5)],
+    };
+
+    /// <summary>
+    /// How much more the best camp training is worth than the same training now (level 5 vs a typical level 3).
+    /// Resting just before camp instead of during it trades an ordinary turn for that difference.
+    /// </summary>
+    public double CampTrainingPremium() => BaseTraining.Keys.Max(id =>
+        (CampTraining[id].Sum(g => Param(g.Param, g.Amount)) - BaseTraining[id].Sum(g => Param(g.Param, g.Amount))) * TypicalTrainingMultiplier);
+
     /// <summary>Mood, other cards' training effectiveness, partner count and growth on a typical training.</summary>
     public const double TypicalTrainingMultiplier = 1.4;
     /// <summary>Bond from one training with a card (without Charming).</summary>

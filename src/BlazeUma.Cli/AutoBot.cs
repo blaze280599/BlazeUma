@@ -33,6 +33,11 @@ internal sealed class AutoBot(BotControl control)
 
     private Stopwatch? _idle;
     private int _turn, _actionsThisTurn;
+    /// <summary>
+    /// A turn whose action already went through (it ended in an event). After the event the home screen can
+    /// show the same turn again for a moment; only events are answered until the turn number moves on.
+    /// </summary>
+    private int _spentTurn = -1;
 
     public Mode Run()
     {
@@ -91,6 +96,7 @@ internal sealed class AutoBot(BotControl control)
         EnsureFastCutscenes(reader);
         _idle = null;
         _turn = -1;
+        _spentTurn = -1;
         _actionsThisTurn = 0;
         int failures = 0;
 
@@ -161,8 +167,10 @@ internal sealed class AutoBot(BotControl control)
 
         string? action =
             RaceRunner.InProgress(reader.ManagedReader) ? ActionPlanner.GoalRace   // left mid-race (pause, by hand)
+            : advice.Situation == Situation.Event ? advice.Best?.Label
+            : turn == _spentTurn ? null                                             // the game is still finishing this turn
             : advice.Situation == Situation.GoalRaceDay ? ActionPlanner.GoalRace
-            : advice.Situation is Situation.Event or Situation.TrainingTurn ? advice.Best?.Label
+            : advice.Situation == Situation.TrainingTurn ? advice.Best?.Label
             : null;
         if (action is null)
         {
@@ -170,7 +178,9 @@ internal sealed class AutoBot(BotControl control)
             _idle ??= Stopwatch.StartNew();
             if (_idle.Elapsed < IdleLimit) { Thread.Sleep(Poll); return (Outcome.Done, null); }
             _idle = null;
-            return (Outcome.NeedsYou, $"{advice.Summary}. The auto bot doesn't handle this screen yet; do it by hand in the game, then resume.");
+            return (Outcome.NeedsYou, turn == _spentTurn
+                ? $"Turn {turn}'s action went through, but the game has not moved on to the next turn; check the game, then resume."
+                : $"{advice.Summary}. The auto bot doesn't handle this screen yet; do it by hand in the game, then resume.");
         }
         _idle = null;
 
@@ -181,6 +191,10 @@ internal sealed class AutoBot(BotControl control)
             Console.WriteLine();
             Console.WriteLine("  " + ConsoleUi.Dim(new string('─', 70)));
             Console.WriteLine("  " + ConsoleUi.Paint(advice.Header, "36"));
+            // Right after the previous turn's training, IsInTraining can still read true while the home screen is
+            // back with the menu closed (turn 36: the open step was skipped and the tile taps did nothing). A
+            // turn starts on the home screen, so give the flag a moment to clear before trusting it.
+            WaitUntil(() => TrainingMenu.IsOpen(reader.ManagedReader) != true, TimeSpan.FromSeconds(5));
         }
         if (++_actionsThisTurn > MaxActionsPerTurn)
             return (Outcome.NeedsYou, $"Turn {turn} has not moved on after {MaxActionsPerTurn} actions; check the game.");
@@ -194,6 +208,8 @@ internal sealed class AutoBot(BotControl control)
         if (plan.Unsupported is not null) return (Outcome.NeedsYou, $"{action}: {plan.Unsupported}.");
 
         var result = Execute(reader, plan, turn, out string? problem);
+        // A turn action that ended in an event (Happy Meek's challenge, a card event…) has used the turn.
+        if (result == Outcome.Done && !plan.IsEvent && TurnNow(reader) == turn && EventShowing(reader)) _spentTurn = turn;
         if (result == Outcome.Done) Thread.Sleep(Settle);
         return (result, problem);
     }
@@ -302,7 +318,7 @@ internal sealed class AutoBot(BotControl control)
                 Thread.Sleep(MenuAnimation);   // the tiles only take taps once they have slid in
                 return open;
             case WaitFor.TileSelected:
-                return WaitUntil(() => TrainingMenu.ReadTiles(r).Any(t => t.CommandId == step.CommandId && t.IsSelected), TimeSpan.FromSeconds(3));
+                return WaitUntil(() => TrainingMenu.ReadTiles(r).Any(t => TrainingIds.Base(t.CommandId) == step.CommandId && t.IsSelected), TimeSpan.FromSeconds(3));
             case WaitFor.Dialog: return WaitUntil(() => DialogButtons(r).Count > 0 || TurnNow(reader) > startTurn, TimeSpan.FromSeconds(5));
             case WaitFor.TurnAdvance:
                 return WaitUntil(() => TurnNow(reader) > startTurn || EventShowing(reader) || DialogButtons(r).Count > 0, TimeSpan.FromSeconds(90));
