@@ -123,6 +123,22 @@ Work through these in order, one at a time. Each item says how we know it is don
    exactly the visible buttons are active (race-day buttons, closed training tiles, summer outing hidden).
    `RaceRunner` drives the screens by rules (first active match wins; dialogs: Race Details → right,
    one visible button → tap it, more → ask), waits out transitions, stops after 30 s on an unmapped screen.
+   First live run (Oka Sho, turn 31): View Results is padlocked until that race has been watched once;
+   tapping it opens "Unlock Requirements". The runner now marks the button locked for the run and taps
+   Race (`_raceStartButtonRight`/`Center`) instead; each button gets at most 3 taps per run.
+   Watched race: in-race Skip did nothing on a first watch, so the runner fast-forwards once and waits
+   (up to 240 s on `RaceMainViewController`); results had only `_resultList._nextButton` visible, then
+   `_singleModeNextButton` on the second page. The turn counter moves on before the after-race popups, so
+   "done" means home with no dialog for 5 s. "Goal Achieved" shows no visible DialogObject button
+   (CenterButtonText "Next"; `_centerButton` inactive) and `_inputBlock` does not close it: the visible
+   Next is somewhere the walker does not reach. Lead: `_dialogObjArray` layouts were skipped by the
+   walker; with the active check they are safe to include (`ButtonFinder(includeDialogTemplates: true)`,
+   used by the race runner and `buttons --active`), so a Next shown from another layout is now found.
+   To verify on the next goal race.
+   NEVER call Unity APIs (agent `call`, `IsActive`, taps) on heap-scan candidates: a scan of 203
+   ButtonCommon candidates hung the game's main thread on turn 32 (a freed object's native pointer).
+   Agent calls only on objects reached from live roots (ButtonFinder paths, validated pickers).
+   `inspect dialog|view|controller` dumps fields for mapping.
    The game refuses DLLs from %LOCALAPPDATA% (LoadLibraryW null); the injector loads a content-hashed copy
    from `agent/build/Release/loaded/` so rebuilding never hits a locked file.
 

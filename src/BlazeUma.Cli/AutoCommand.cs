@@ -14,10 +14,11 @@ namespace BlazeUma.Cli;
 /// run:  supervised: confirm each tap with Enter (s = skip step, q = stop, a = do the rest of this action
 ///       without asking). Races run on through entry, the race and results to the next turn. Other dialogs
 ///       that open afterwards (confirmations) are listed so you choose the button.
+///       --yes taps without asking (no console needed); a dialog that needs a choice stops the run.
 /// </summary>
 internal static class AutoCommand
 {
-    public const string Usage = "usage: BlazeUma.Cli auto plan|run [--action \"Train Wit\"] [--pid N] [--metadata PATH] [--master PATH]";
+    public const string Usage = "usage: BlazeUma.Cli auto plan|run [--action \"Train Wit\"] [--yes] [--pid N] [--metadata PATH] [--master PATH]";
 
     private static readonly TimeSpan Poll = TimeSpan.FromMilliseconds(250);
 
@@ -27,7 +28,8 @@ internal static class AutoCommand
         bool execute = args[0] == "run";
         int? pid = null;
         string? metadata = null, master = null, action = null;
-        bool resolveAll = false;   // diagnostic: resolve every step against the current screen
+        bool resolveAll = false;
+        bool yes = false;          // run: tap without asking; dialogs that need a choice stop the run   // diagnostic: resolve every step against the current screen
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
@@ -37,12 +39,13 @@ internal static class AutoCommand
                 case "--master": master = args[++i]; break;
                 case "--action": action = args[++i]; break;
                 case "--resolve-all": resolveAll = true; break;
+                case "--yes": yes = true; break;
                 default: Console.Error.WriteLine(Usage); return 2;
             }
         }
-        if (execute && Console.IsInputRedirected)
+        if (execute && !yes && Console.IsInputRedirected)
         {
-            Console.Error.WriteLine("auto run is supervised and needs an interactive console.");
+            Console.Error.WriteLine("auto run is supervised and needs an interactive console (or --yes to tap without asking).");
             return 2;
         }
 
@@ -54,7 +57,13 @@ internal static class AutoCommand
 
         if (action is null)
         {
-            if (advice.Situation == Situation.GoalRaceDay)
+            if (RaceRunner.InProgress(reader.ManagedReader))
+            {
+                // Entry confirmation or race screens left open by a stopped run: finish that race.
+                action = ActionPlanner.GoalRace;
+                Console.WriteLine("A race is under way (entry confirmation, race screens or after-race popups).");
+            }
+            else if (advice.Situation == Situation.GoalRaceDay)
             {
                 action = ActionPlanner.GoalRace;
                 Console.WriteLine($"Advisor: {advice.Summary}");
@@ -83,7 +92,7 @@ internal static class AutoCommand
         if (plan.Unsupported is not null) { Console.WriteLine($"{action}: {plan.Unsupported}."); return 0; }
 
         var r = reader.ManagedReader;
-        for (int i = 0; i < plan.Steps.Count; i++)
+        for (int i = 0; i < plan.Steps.Count && !(plan.RunsRace && RaceRunner.InProgress(r)); i++)
         {
             string target = i == 0 || resolveAll ? Describe(plan.Steps[i].Resolve(reader)) : "(found on screen when it runs)";
             Console.WriteLine($"  {i + 1}. {plan.Steps[i].Description}  {target}");
@@ -94,17 +103,17 @@ internal static class AutoCommand
         if (!execute) return 0;
 
         Console.WriteLine(ButtonTapper.EnsureAgent(reader.ProcessId));
-        return Execute(reader, plan, snapshot.Turn ?? 0);
+        return Execute(reader, plan, snapshot.Turn ?? 0, yes);
     }
 
     private static string Describe(StepTarget t) =>
         t.Error is not null ? $"[cannot: {t.Error}]" : t.SkipReason is not null ? $"[skip: {t.SkipReason}]" : $"→ {t.Where}";
 
-    private static int Execute(GameReader reader, ActionPlan plan, int startTurn)
+    private static int Execute(GameReader reader, ActionPlan plan, int startTurn, bool yes)
     {
         var r = reader.ManagedReader;
         var tapper = new ButtonTapper(reader);
-        bool auto = false;
+        bool auto = yes;
         char Confirm(string question)
         {
             if (auto) { Console.WriteLine($"{question}  (auto)"); return '\n'; }
@@ -113,7 +122,11 @@ internal static class AutoCommand
             return c;
         }
 
-        for (int i = 0; i < plan.Steps.Count; i++)
+        // A race left mid-way (stopped run, crash) resumes from the screen it is on.
+        bool resume = plan.RunsRace && RaceRunner.InProgress(r);
+        if (resume) Console.WriteLine("A race is already under way; resuming from the current screen.");
+
+        for (int i = 0; i < plan.Steps.Count && !resume; i++)
         {
             var step = plan.Steps[i];
             var target = step.Resolve(reader);
@@ -133,10 +146,10 @@ internal static class AutoCommand
             if (TurnNow(reader) > startTurn || EventShowing(reader)) return Finish(reader, startTurn);
         }
 
-        if (plan.RunsRace && TurnNow(reader) <= startTurn)
+        if (plan.RunsRace && (resume || TurnNow(reader) <= startTurn))
         {
             Console.WriteLine("Running the race:");
-            RaceRunner.Run(reader, tapper, startTurn, Confirm);
+            RaceRunner.Run(reader, tapper, startTurn, Confirm, resume);
         }
 
         // Follow-up: confirmations and pickers. The user chooses; nothing is guessed.
@@ -146,6 +159,7 @@ internal static class AutoCommand
             if (dialog.Count == 0) break;
             Console.WriteLine("A dialog is open:");
             for (int j = 0; j < dialog.Count; j++) Console.WriteLine($"  {j + 1}. {dialog[j].Path}");
+            if (yes) { Console.WriteLine("Not choosing a dialog button unasked (--yes); pick it by hand."); break; }
             Console.Write($"Tap which (1-{dialog.Count}), Enter = leave it, q = stop: ");
             string? answer = Console.ReadLine()?.Trim();
             if (string.IsNullOrEmpty(answer) || answer == "q") break;

@@ -29,6 +29,8 @@ if (args.Length > 0 && args[0] == "agent")
 }
 if (args.Length > 0 && args[0] == "buttons")
     return ButtonsCommand.Run(args[1..]);
+if (args.Length > 0 && args[0] == "inspect")
+    return InspectCommand.Run(args[1..]);
 if (args.Length > 0 && args[0] == "auto")
 {
     try { return AutoCommand.Run(args[1..]); }

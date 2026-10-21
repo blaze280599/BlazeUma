@@ -13,7 +13,11 @@ public sealed record FoundButton(ulong Address, string Path, string ClassName, b
 /// current scene's view and view controller. The field path (e.g. <c>SingleModeMainView._blackMaskButton</c>)
 /// serves as the button's name for the advisor to target later.
 /// </summary>
-public sealed class ButtonFinder(ManagedReader reader)
+/// <param name="includeDialogTemplates">
+/// Also walk DialogCommon's <c>_dialogObjArray</c> layouts. Most are hidden templates, so only use this with an
+/// active check: some popups (Goal Achieved) show their button from one of these, not <c>_currentDialogObj</c>.
+/// </param>
+public sealed class ButtonFinder(ManagedReader reader, bool includeDialogTemplates = false)
 {
     public const string ButtonClass = "Gallop.ButtonCommon";
     public const int DefaultMaxDepth = 5;
@@ -111,8 +115,8 @@ public sealed class ButtonFinder(ManagedReader reader)
             {
                 if (field.IsStatic || field.IsLiteral) continue;
                 if (field.Kind is not (Il2CppTypeKind.Class or Il2CppTypeKind.GenericInstance or Il2CppTypeKind.SzArray)) continue;
-                // DialogCommon keeps every layout template in _dialogObjArray; only _currentDialogObj is shown.
-                if (field.Name == "_dialogObjArray") continue;
+                // DialogCommon keeps every layout template in _dialogObjArray; usually only _currentDialogObj is shown.
+                if (field.Name == "_dialogObjArray" && !includeDialogTemplates) continue;
                 ulong child;
                 try { child = reader.Memory.ReadPointer(obj + (ulong)field.Offset); }
                 catch (MemoryReadException) { continue; }

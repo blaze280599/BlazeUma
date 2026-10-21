@@ -64,7 +64,8 @@ internal static class ButtonsCommand
     /// <summary>Screen name, open dialog titles and the buttons, as printable text.</summary>
     private static string Describe(ManagedReader r, bool all, ButtonTapper? tapper)
     {
-        var buttons = new ButtonFinder(r).FromCurrentScene();
+        // With the active check, hidden dialog layout templates are filtered out, so walk them too.
+        var buttons = new ButtonFinder(r, includeDialogTemplates: tapper is not null).FromCurrentScene();
         var lines = new List<string> { $"Screen: {ViewName(r)}{DialogTitles(r)}" };
         int shown = 0;
         foreach (var b in buttons.OrderByDescending(b => b.CanTap).ThenBy(b => b.Path))
