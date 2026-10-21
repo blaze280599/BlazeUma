@@ -68,10 +68,53 @@ public sealed class ButtonFinder(ManagedReader reader, bool includeDialogTemplat
         {
             var dialogs = reader.ListItems(reader.Ptr(dialogManager, "_dialogList"));
             for (int i = 0; i < dialogs.Count; i++)
+            {
                 Walk(dialogs[i], $"Dialog[{i}]", 0, maxDepth, buttonClass, found, visited);
+                // Custom popups (Goal Achieved: DialogSingleModeRouteClear._button = Next) keep their buttons on
+                // a component of _data.ContentsObject, a GameObject with no managed fields to walk.
+                foreach (ulong component in DialogContents(dialogs[i]))
+                    Walk(component, $"Dialog[{i}].Contents.{SafeName(reader.ClassOf(component)).Split('.')[^1]}", 0, maxDepth, buttonClass, found, visited);
+            }
         }
 
         return found;
+    }
+
+    /// <summary>The managed components on a dialog's <c>_data.ContentsObject</c> (empty for plain dialogs).</summary>
+    public IReadOnlyList<ulong> DialogContents(ulong dialog)
+    {
+        try
+        {
+            ulong data = reader.Ptr(dialog, "_data");
+            return data == 0 ? [] : Components(reader.Ptr(data, "ContentsObject"));
+        }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { return []; }
+    }
+
+    // Native Unity layout (this game's build): UnityEngine.Object.m_CachedPtr at 0x10; a native object points
+    // back to its managed wrapper at 0x28; a native GameObject's component array is at 0x30 with its count at
+    // 0x40, entries { type, native component }. Every step is checked against the back-pointer.
+    private const int CachedPtr = 0x10, ManagedBackPtr = 0x28, GoComponents = 0x30, GoComponentCount = 0x40, MaxComponents = 64;
+
+    /// <summary>The managed components on a GameObject (MonoBehaviours, Transform, ...), read from native memory.</summary>
+    private IReadOnlyList<ulong> Components(ulong gameObject)
+    {
+        if (gameObject == 0 || !MemoryExtensions.IsPlausiblePointer(gameObject)) return [];
+        var m = reader.Memory;
+        ulong native = m.ReadPointer(gameObject + CachedPtr);
+        if (!MemoryExtensions.IsPlausiblePointer(native) || m.ReadPointer(native + ManagedBackPtr) != gameObject) return [];
+        ulong array = m.ReadPointer(native + GoComponents);
+        ulong count = m.ReadPointer(native + GoComponentCount);
+        if (!MemoryExtensions.IsPlausiblePointer(array) || count > MaxComponents) return [];
+        var components = new List<ulong>();
+        for (ulong i = 0; i < count; i++)
+        {
+            ulong component = m.ReadPointer(array + i * 16 + 8);
+            if (!MemoryExtensions.IsPlausiblePointer(component)) continue;
+            ulong managed = m.ReadPointer(component + ManagedBackPtr);
+            if (MemoryExtensions.IsPlausiblePointer(managed) && m.ReadPointer(managed + CachedPtr) == component) components.Add(managed);
+        }
+        return components;
     }
 
     private const int MaxParentChain = 10;

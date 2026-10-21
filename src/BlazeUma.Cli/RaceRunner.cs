@@ -15,7 +15,10 @@ namespace BlazeUma.Cli;
 internal static class RaceRunner
 {
     /// <param name="Once">Tap at most once per run (a toggle such as fast-forward; it stays on screen after).</param>
-    private sealed record Rule(string Screen, string Path, string Description, bool Once = false);
+    /// <param name="Repeat">Tap again while it stays on screen (in-race Skip: each tap skips one of 3–4 cutscenes).</param>
+    private sealed record Rule(string Screen, string Path, string Description, bool Once = false, bool Repeat = false);
+
+    private const int MaxTaps = 3, MaxRepeatTaps = 12;
 
     private const string Home = "Gallop.SingleModeMainViewController";
     private const string EntryConfirmTitle = "Race Details";
@@ -42,8 +45,8 @@ internal static class RaceRunner
         // Runner list shown before a watched race (View Results locked): its Race! button starts it. Before the
         // in-race buttons: fast-forward is also visible on the runner list and would be spent before the start.
         new("Gallop.RaceMainViewController", "Controller._raceMemberListUI._startButton", "Race! (start from the runner list)"),
-        new("Gallop.RaceMainViewController", "Controller._raceUI._skipButtonCommon", "Skip the race"),
-        // Skip does nothing while a race is watched for the first time (Oka Sho, turn 31); fast-forward does.
+        new("Gallop.RaceMainViewController", "Controller._raceUI._skipButtonCommon", "Skip the race", Repeat: true),
+        // Fast-forward only when Skip is not showing.
         new("Gallop.RaceMainViewController", "Controller._raceUI._fastForwardUI._fastForwardButtonCommon", "Fast-forward the race", Once: true),
         new("Gallop.SingleModeMonthStartViewController", "View._screenTapButton", "Tap through the new month"),
     ];
@@ -98,8 +101,9 @@ internal static class RaceRunner
                     }
                     next = pick.Choice;
                     if (next is not null || blocker is null) buttonless.Restart();
-                    // Tap-anywhere popups (Goal Achieved) have no visible button; their blocker closes them.
-                    else if (buttonless.Elapsed >= TimeSpan.FromSeconds(2)) next = ($"Tap to close \"{DialogTitle(r, DialogIndex(blocker))}\"", blocker);
+                    // Tap-anywhere popups have no visible button; their blocker closes them. Waits out popups
+                    // whose button appears after an animation (Goal Achieved's Next, which the blocker does not close).
+                    else if (buttonless.Elapsed >= TimeSpan.FromSeconds(5)) next = ($"Tap to close \"{DialogTitle(r, DialogIndex(blocker))}\"", blocker);
                 }
                 else next = ScreenPick(tapper, screen, buttons, locked);
             }
@@ -119,23 +123,29 @@ internal static class RaceRunner
             }
 
             var (description, button) = next.Value;
+            var rule = Rules.FirstOrDefault(x => x.Path == button.Path);
+            int maxTaps = rule is { Repeat: true } ? MaxRepeatTaps : MaxTaps;
             string key = $"{screen}|{button.Path}|{button.Address:X}";
             taps[key] = taps.GetValueOrDefault(key) + 1;
-            if (taps[key] > 3) { Console.WriteLine($"   {description} did not take after 3 taps; stopping."); return 1; }
+            if (taps[key] > maxTaps && rule is { Repeat: true } && locked.Add(rule.Path))
+            {
+                Console.WriteLine($"   {description} is still showing after {maxTaps} taps; letting the race play.");
+                continue;
+            }
+            if (taps[key] > maxTaps) { Console.WriteLine($"   {description} did not take after {maxTaps} taps; stopping."); return 1; }
 
             switch (ask($"{description}  → {button.Path}"))
             {
                 case 'q': Console.WriteLine("Stopped. Nothing else was tapped."); return 1;
                 case 's': Console.WriteLine("Skipped; continue by hand."); return 1;
             }
-            string reply = tapper.Tap(button.Address);
+            string reply = TapButton(r, tapper, button);
             if (!reply.StartsWith("ok")) { Console.WriteLine($"   Tap failed: {reply}"); return 1; }
             if (!button.Path.StartsWith("Dialog[")) lastRule = button.Path;
             stall.Restart();
             bool gone = WaitGone(r, tapper, button.Address);
-            var rule = Rules.FirstOrDefault(x => x.Path == button.Path);
             if (rule is { Once: true }) locked.Add(rule.Path);
-            else if (rule is not null && !gone && (misses[rule.Path] = misses.GetValueOrDefault(rule.Path) + 1) >= 2 && locked.Add(rule.Path))
+            else if (rule is { Repeat: false } && !gone && (misses[rule.Path] = misses.GetValueOrDefault(rule.Path) + 1) >= 2 && locked.Add(rule.Path))
                 Console.WriteLine($"   {description} did nothing twice; trying the next option.");
         }
     }
@@ -182,7 +192,8 @@ internal static class RaceRunner
         string title = DialogTitle(r, top) ?? "(untitled)";
         lockedNotice = title == LockedTitle;
         var shown = buttons
-            .Where(b => b.CanTap && DialogIndex(b) == top && (b.Path.Contains("._currentDialogObj.") || b.Path.Contains("._dialogObjArray[")) && tapper.IsActive(b.Address) == true)
+            .Where(b => b.CanTap && DialogIndex(b) == top && (b.Path.Contains("._currentDialogObj.") || b.Path.Contains("._dialogObjArray[") || b.Path.Contains("].Contents."))
+                        && tapper.IsActive(b.Address) == true)
             .DistinctBy(b => b.Address)   // _currentDialogObj is also one of the templates
             .ToList();
         if (shown.Count == 0)
@@ -199,6 +210,27 @@ internal static class RaceRunner
             1 => (($"Close \"{title}\"", shown[0]), null),
             _ => (null, $"\"{title}\" offers {shown.Count} buttons"),
         };
+    }
+
+    /// <summary>
+    /// Popup contents whose button is wired with <c>AddOnClickOnce</c>, which a tap (<c>m_OnClick</c>) does not
+    /// fire: the handler is called instead. Goal Achieved's Next → <c>TriggerClose</c> (checked live, turn 34).
+    /// </summary>
+    private static readonly Dictionary<string, string> ContentsHandlers = new() { ["Gallop.DialogSingleModeRouteClear"] = "TriggerClose" };
+
+    private static string TapButton(ManagedReader r, ButtonTapper tapper, FoundButton button)
+    {
+        if (button.Path.Contains("].Contents."))
+        {
+            ulong manager = r.SingletonInstance("Gallop.DialogManager");
+            var dialogs = manager == 0 ? [] : r.ListItems(r.Ptr(manager, "_dialogList"));
+            int index = DialogIndex(button);
+            if (index >= 0 && index < dialogs.Count)
+                foreach (ulong owner in new ButtonFinder(r).DialogContents(dialogs[index]))
+                    if (r.ClassName(owner) is { } cls && ContentsHandlers.TryGetValue(cls, out var method) && button.Path.Contains($".Contents.{cls.Split('.')[^1]}."))
+                        return tapper.Invoke(owner, cls, method);
+        }
+        return tapper.Tap(button.Address);
     }
 
     /// <summary>After a tap, give the button a moment to disappear so it is not tapped twice. False if it stayed.</summary>

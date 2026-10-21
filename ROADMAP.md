@@ -134,7 +134,11 @@ Work through these in order, one at a time. Each item says how we know it is don
    Next is somewhere the walker does not reach. Lead: `_dialogObjArray` layouts were skipped by the
    walker; with the active check they are safe to include (`ButtonFinder(includeDialogTemplates: true)`,
    used by the race runner and `buttons --active`), so a Next shown from another layout is now found.
-   To verify on the next goal race.
+   To verify on the next goal race. Found on turn 34 (Japanese Oaks): the Next is
+   `DialogSingleModeRouteClear._button`, a component on `_data.ContentsObject` (a GameObject; ButtonFinder now
+   reads its components from native memory: m_CachedPtr 0x10, back-pointer 0x28, component array 0x30/0x40).
+   Tapping it (`m_OnClick`) does nothing (wired via `AddOnClickOnce`); `TriggerClose()` closes it, checked live.
+   In-race Skip stays on screen across the race's 3–4 cutscenes; the runner now re-taps it (up to 12).
    NEVER call Unity APIs (agent `call`, `IsActive`, taps) on heap-scan candidates: a scan of 203
    ButtonCommon candidates hung the game's main thread on turn 32 (a freed object's native pointer).
    Agent calls only on objects reached from live roots (ButtonFinder paths, validated pickers).
