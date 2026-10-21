@@ -33,12 +33,22 @@ public sealed class SkillAdvisor(CareerContext ctx)
             .Where(s => !owned.Contains(s.Id))
             .Select(s => Score(s, s.BaseCost))
             .ToList();
+        int Discounted(SkillInfo s, int groupId, int rarity)
+        {
+            var hint = ctx.Character.Hints.FirstOrDefault(h => h.GroupId == groupId && h.Rarity == rarity);
+            int discount = hint is null ? 0 : HintDiscount[Math.Clamp(hint.Level, 0, HintDiscount.Length - 1)];
+            return s.BaseCost * (100 - discount) / 100;
+        }
+
         foreach (var hint in ctx.Character.Hints)
         {
             if (ctx.Data.SkillForHint(hint.GroupId, hint.Rarity) is not { } info || owned.Contains(info.Id)) continue;
-            int discount = HintDiscount[Math.Clamp(hint.Level, 0, HintDiscount.Length - 1)];
+            int price = Discounted(info, hint.GroupId, hint.Rarity);
+            // A gold skill also buys its white version unless owned (live shop: Sturm und Drang 342 = 162 + 180).
+            if (info.IsGold && ctx.Data.SkillForHint(hint.GroupId, 1) is { } white && !owned.Contains(white.Id))
+                price += Discounted(white, hint.GroupId, 1);
             list.RemoveAll(c => c.Skill.Id == info.Id);
-            list.Add(Score(info, info.BaseCost * (100 - discount) / 100));
+            list.Add(Score(info, price));
         }
         return list;
     }

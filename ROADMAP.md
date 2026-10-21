@@ -104,6 +104,12 @@ Work through these in order, one at a time. Each item says how we know it is don
    `WH_GETMESSAGE` hook (no code patching). Live: tapped `DetailButton` on turn 28, Umamusume Details
    panel opened as if the user had tapped it, game and reader unaffected afterwards, `agent unload`
    removed the hook and module cleanly.
+   First supervised action (turn 28 → 29): `auto run` skipped the Recreation tap (picker already open),
+   tapped Light Hello's row after confirmation, and saw the turn advance in 2.5 s. Measured outing (final
+   chain step, 4 → 5): energy 31 → 63 (+32, estimate was +20), bond +5, Speed and Guts +6 each, mood
+   already Great. Race day: the closed-shop skill prediction priced gold skills without their white
+   version (See Ya Later! shown as 144; real ≈ 304 with Playtime's Over!); fixed and tested.
+
    Step 4d: Recreation picker. First live `auto run` (turn 28) tapped Recreation and detected the dialog
    in 0.3 s, but offered 13 meaningless buttons: DialogCommon keeps 4 layout templates in
    `_dialogObjArray` (now skipped; only `_currentDialogObj` is shown) and the rows themselves live in the

@@ -268,6 +268,15 @@ public class SkillAdvisorTests
     }
 
     [Fact]
+    public void Predicted_GoldSkillIncludesItsWhiteVersion()
+    {
+        // Gold hint lv1 (160 → 144) plus the unowned white version at full price (160): 304, as the live shop charges.
+        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(hints: [new SkillHint(20071, 2, 1)])), new FakeGameData());
+        var gold = new SkillAdvisor(ctx).Predicted().Single(c => c.Skill.Id == 200711);
+        Assert.Equal(144 + 160, gold.Price);
+    }
+
+    [Fact]
     public void Plan_SavesUntilGoalIsClose_ThenBuysFittingSkills()
     {
         Assert.Empty(Advisor(turn: 14).Plan(Advisor(turn: 14).Predicted(), 400).Buy);

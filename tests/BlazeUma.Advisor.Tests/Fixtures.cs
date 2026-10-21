@@ -19,6 +19,7 @@ internal sealed class FakeGameData : IGameData
     private readonly Dictionary<int, SkillInfo> _skills = new[]
     {
         new SkillInfo(200712, "Rosy Outlook", 1, 20071, 217, 160, "distance_type==3&phase_random==1&order<=3", 9),
+        new SkillInfo(200711, "Trackblazer", 2, 20071, 508, 160, "distance_type==3&phase_random==1&order<=3", 9),
         new SkillInfo(200722, "Up-Tempo", 1, 20072, 217, 160, "distance_type==3&phase_random==1&order_rate<=50", 27),
         new SkillInfo(200572, "Preferred Position", 1, 20057, 217, 180, "running_style==2&phase_random==1&order_rate<=50", 9),
         new SkillInfo(200282, "Competitive Spirit ○", 1, 20028, 129, 90, "running_style_count_same_rate>=40", 3),
