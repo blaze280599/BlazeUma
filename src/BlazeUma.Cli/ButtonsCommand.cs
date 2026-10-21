@@ -5,19 +5,22 @@ using BlazeUma.Memory.Il2Cpp;
 namespace BlazeUma.Cli;
 
 /// <summary>
-/// BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all]
-/// Lists UI buttons reachable from the current scene's view and controller.
+/// BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all] [--watch SECONDS]
+/// Lists UI buttons reachable from the current scene's view, controller, footer and open dialogs.
 /// Only tappable (enabled + interactable) buttons by default; --all shows every match.
+/// --watch traces: prints (and appends to logs/trace-*.txt) every time the screen or its buttons change,
+/// so a flow played by hand can be mapped for automation.
 /// </summary>
 internal static class ButtonsCommand
 {
-    public const string Usage = "usage: BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all]";
+    public const string Usage = "usage: BlazeUma.Cli buttons [--pid N] [--metadata PATH] [--all] [--watch SECONDS]";
 
     public static int Run(string[] args)
     {
         int? pid = null;
         string? metadata = null;
         bool all = false;
+        double? watch = null;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -25,6 +28,7 @@ internal static class ButtonsCommand
                 case "--pid": pid = int.Parse(args[++i]); break;
                 case "--metadata": metadata = args[++i]; break;
                 case "--all": all = true; break;
+                case "--watch": watch = double.Parse(args[++i]); break;
                 default: Console.Error.WriteLine(Usage); return 2;
             }
         }
@@ -32,21 +36,12 @@ internal static class ButtonsCommand
         try
         {
             using var reader = GameReader.Open(pid, metadata);
-            var buttons = new ButtonFinder(reader.ManagedReader).FromCurrentScene();
-            // Read the current view name directly — the full Snapshot() can race with mid-animation state.
-            ulong scene = reader.ManagedReader.SingletonInstance("Gallop.SceneManager");
-            string view = scene == 0 ? "?" : (reader.ManagedReader.ClassName(reader.ManagedReader.Ptr(scene, "_currentViewController")) ?? "?");
-            Console.WriteLine($"Screen: {view}");
-            int shown = 0;
-            foreach (var b in buttons.OrderByDescending(b => b.CanTap).ThenBy(b => b.Path))
+            if (watch is null)
             {
-                if (!all && !b.CanTap) continue;
-                char mark = b.CanTap ? '✓' : (b.IsEnable ? 'E' : ' ');
-                Console.WriteLine($" {mark} 0x{b.Address:X}  {b.Path,-70}  {b.ClassName}");
-                shown++;
+                Console.WriteLine(Describe(reader.ManagedReader, all));
+                return 0;
             }
-            Console.WriteLine($"{shown} of {buttons.Count} buttons shown{(all ? "" : " (pass --all to include non-tappable)")}");
-            return 0;
+            return Trace(reader.ManagedReader, all, TimeSpan.FromSeconds(Math.Max(0.25, watch.Value)));
         }
         catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InvalidOperationException
                                       or System.ComponentModel.Win32Exception or IOException)
@@ -54,5 +49,71 @@ internal static class ButtonsCommand
             Console.Error.WriteLine(e.Message);
             return 1;
         }
+    }
+
+    /// <summary>Screen name, open dialog titles and the buttons, as printable text.</summary>
+    private static string Describe(ManagedReader r, bool all)
+    {
+        var buttons = new ButtonFinder(r).FromCurrentScene();
+        var lines = new List<string> { $"Screen: {ViewName(r)}{DialogTitles(r)}" };
+        int shown = 0;
+        foreach (var b in buttons.OrderByDescending(b => b.CanTap).ThenBy(b => b.Path))
+        {
+            if (!all && !b.CanTap) continue;
+            char mark = b.CanTap ? '✓' : (b.IsEnable ? 'E' : ' ');
+            lines.Add($" {mark} 0x{b.Address:X}  {b.Path,-70}  {b.ClassName}");
+            shown++;
+        }
+        lines.Add($"{shown} of {buttons.Count} buttons shown{(all ? "" : " (pass --all to include non-tappable)")}");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static int Trace(ManagedReader r, bool all, TimeSpan interval)
+    {
+        Directory.CreateDirectory("logs");
+        string path = Path.Combine("logs", $"trace-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+        Console.WriteLine($"Tracing screen changes to {path}; Ctrl+C to stop.");
+        string? last = null;
+        var cancel = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
+        while (!cancel.IsCancellationRequested)
+        {
+            try
+            {
+                // Compare without addresses: the same screen re-created at new addresses is not a change.
+                string text = Describe(r, all);
+                string key = string.Join("\n", text.Split(Environment.NewLine).Select(l => l.Length > 22 && l.StartsWith(' ') ? l[22..] : l));
+                if (key != last)
+                {
+                    string entry = $"--- {DateTime.Now:HH:mm:ss.fff}{Environment.NewLine}{text}{Environment.NewLine}";
+                    Console.WriteLine(entry);
+                    File.AppendAllText(path, entry);
+                    last = key;
+                }
+            }
+            catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { }
+            try { Thread.Sleep(interval); } catch (ThreadInterruptedException) { break; }
+        }
+        return 0;
+    }
+
+    private static string ViewName(ManagedReader r)
+    {
+        ulong scene = r.SingletonInstance("Gallop.SceneManager");
+        return scene == 0 ? "?" : (r.ClassName(r.Ptr(scene, "_currentViewController")) ?? "?");
+    }
+
+    private static string DialogTitles(ManagedReader r)
+    {
+        try
+        {
+            ulong manager = r.SingletonInstance("Gallop.DialogManager");
+            if (manager == 0) return "";
+            var titles = r.ListItems(r.Ptr(manager, "_dialogList"))
+                .Select(d => r.Ptr(d, "_data")).Where(d => d != 0)
+                .Select(d => r.String(r.Ptr(d, "Title")) ?? "(untitled)").ToList();
+            return titles.Count == 0 ? "" : $"  dialogs: {string.Join(" | ", titles)}";
+        }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { return ""; }
     }
 }

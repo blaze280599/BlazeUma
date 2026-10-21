@@ -104,6 +104,16 @@ Work through these in order, one at a time. Each item says how we know it is don
    `WH_GETMESSAGE` hook (no code patching). Live: tapped `DetailButton` on turn 28, Umamusume Details
    panel opened as if the user had tapped it, game and reader unaffected afterwards, `agent unload`
    removed the hook and module cleanly.
+   Step 4e: races up to entry. Race-day home (turn 29) disables Training/Rest/Recreation/Races and shows
+   `_targetRaceRegistButton` (Race!) and `_targetRaceSkillGetButton`. The race list
+   (`SingleModeRaceEntryViewController`) has rows `Controller._itemList[i]._entryButton` (select),
+   `View.EntryButton` (green Race), Reserve/arrows, and `_currentSelectedProgram`; the goal row was
+   pre-selected (Tulip Sho, program 185). New entry state 5 = blocked because a goal race is due today.
+   `RaceEntryScreen` reads rows / selection / Race button; plans "Goal race" (race day) and
+   "Race: <name>" (optional race) go open list → select row (skipped if selected) → Race.
+   Screens after entry are not mapped yet: `buttons --watch` traces each screen change to
+   `logs/trace-*.txt` so one hand-played race can map them.
+
    First supervised action (turn 28 → 29): `auto run` skipped the Recreation tap (picker already open),
    tapped Light Hello's row after confirmation, and saw the turn advance in 2.5 s. Measured outing (final
    chain step, 4 → 5): energy 31 → 63 (+32, estimate was +20), bond +5, Speed and Guts +6 each, mood

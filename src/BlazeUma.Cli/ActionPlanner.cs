@@ -4,7 +4,7 @@ using BlazeUma.Memory.Game;
 namespace BlazeUma.Cli;
 
 /// <summary>What the runner waits for after a tap before moving on.</summary>
-internal enum WaitFor { Nothing, TrainingMenu, TileSelected, Dialog, TurnAdvance }
+internal enum WaitFor { Nothing, TrainingMenu, TileSelected, Dialog, TurnAdvance, RaceList, RaceSelected, LeftRaceList }
 
 /// <summary>The button a step taps right now, or why it is skipped / cannot run.</summary>
 internal sealed record StepTarget(ulong Button, string Where, string? SkipReason = null, string? Error = null)
@@ -34,11 +34,23 @@ internal static class ActionPlanner
         ["Guts"] = TrainingIds.Guts, ["Wit"] = TrainingIds.Wit,
     };
 
+    public const string GoalRace = "Goal race";
+
     /// <param name="friendName">Name of the character in a deck slot (1–6), to match "Recreation: &lt;name&gt;".</param>
-    public static ActionPlan For(string action, Func<int, string?> friendName)
+    /// <param name="raceProgram">Program id of a race held this turn, by name, to match "Race: &lt;name&gt;".</param>
+    public static ActionPlan For(string action, Func<int, string?> friendName, Func<string, int?> raceProgram)
     {
         if (action.StartsWith("Train ", StringComparison.OrdinalIgnoreCase) && Trainings.TryGetValue(action[6..].Trim(), out int id))
             return Training(action, id);
+        if (action.Equals(GoalRace, StringComparison.OrdinalIgnoreCase))
+            return Race(action, "_targetRaceRegistButton", "Tap Race! (race day)", programId: null);
+        if (action.StartsWith("Race:", StringComparison.OrdinalIgnoreCase))
+        {
+            string name = action[5..].Trim();
+            return raceProgram(name) is int program
+                ? Race(action, "_raceRegistButton", "Tap Races (opens the race list)", program)
+                : new ActionPlan(action, [], Unsupported: $"no race named {name} is held this turn");
+        }
         if (action.Equals("Rest", StringComparison.OrdinalIgnoreCase))
             return new ActionPlan(action, [Home("Tap Rest", "_nextMonthButton", WaitFor.Dialog)]);
         if (action.StartsWith("Recreation", StringComparison.OrdinalIgnoreCase))
@@ -70,6 +82,44 @@ internal static class ActionPlanner
                 if (!tile.IsSelected) return StepTarget.Fail($"{name} is not the selected tile");
                 return new StepTarget(tile.Button, $"TrainingFooter._items[{tile.Index}] ({name}, selected)");
             }, WaitFor.TurnAdvance, commandId),
+        ]);
+    }
+
+    /// <summary>
+    /// Open the race list, select the race (the goal row when <paramref name="programId"/> is null), tap the
+    /// green Race button. Screens after entry (paddock, race, results) are not mapped yet.
+    /// </summary>
+    private static ActionPlan Race(string action, string openButton, string openDescription, int? programId)
+    {
+        RaceRow? Target(RaceEntryState list) => programId is int p
+            ? list.Rows.FirstOrDefault(x => x.ProgramId == p)
+            : list.Rows.FirstOrDefault(x => x.IsGoal && x.EntryState == 0);
+
+        return new ActionPlan(action,
+        [
+            Home(openDescription, openButton, WaitFor.RaceList),
+            new PlanStep("Select the race", g =>
+            {
+                var list = RaceEntryScreen.Read(g.ManagedReader);
+                if (list is null) return StepTarget.Fail("the race list is not open");
+                var row = Target(list);
+                if (row is null) return StepTarget.Fail(programId is null ? "no enterable goal race in the list" : $"program {programId} is not in the list");
+                if (row.EntryState != 0) return StepTarget.Fail($"program {row.ProgramId} cannot be entered (state {row.EntryState})");
+                return list.SelectedProgramId == row.ProgramId
+                    ? StepTarget.Skip($"program {row.ProgramId} is already selected")
+                    : new StepTarget(row.Button, $"race row {row.Index} (program {row.ProgramId})");
+            }, WaitFor.RaceSelected, programId ?? 0),
+            new PlanStep("Tap Race (enter the selected race)", g =>
+            {
+                var list = RaceEntryScreen.Read(g.ManagedReader);
+                if (list is null) return StepTarget.Fail("the race list is not open");
+                var row = Target(list);
+                if (row is null || list.SelectedProgramId != row.ProgramId)
+                    return StepTarget.Fail($"the selected race is {list.SelectedProgramId}, not the planned one");
+                return list.EntryButton == 0
+                    ? StepTarget.Fail("no Race button on screen")
+                    : new StepTarget(list.EntryButton, $"View.EntryButton (program {row.ProgramId})");
+            }, WaitFor.LeftRaceList),
         ]);
     }
 

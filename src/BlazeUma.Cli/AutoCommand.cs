@@ -53,13 +53,21 @@ internal static class AutoCommand
 
         if (action is null)
         {
-            if (advice.Situation != Situation.TrainingTurn || advice.Best is null)
+            if (advice.Situation == Situation.GoalRaceDay)
+            {
+                action = ActionPlanner.GoalRace;
+                Console.WriteLine($"Advisor: {advice.Summary}");
+            }
+            else if (advice.Situation != Situation.TrainingTurn || advice.Best is null)
             {
                 Console.WriteLine($"Advisor: {advice.Summary}. Only home-screen actions are automated so far; do this one by hand.");
                 return 0;
             }
-            action = advice.Best.Label;
-            Console.WriteLine($"Advisor pick: {action}");
+            else
+            {
+                action = advice.Best.Label;
+                Console.WriteLine($"Advisor pick: {action}");
+            }
         }
         else
         {
@@ -67,8 +75,10 @@ internal static class AutoCommand
         }
 
         var bonds = snapshot.Character?.Bonds ?? [];
-        var plan = ActionPlanner.For(action, slot =>
-            bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null);
+        var plan = ActionPlanner.For(action,
+            slot => bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null,
+            name => data.ProgramsForTurn(snapshot.Turn ?? 0)
+                .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.ProgramId);
         if (plan.Unsupported is not null) { Console.WriteLine($"{action}: {plan.Unsupported}."); return 0; }
 
         var r = reader.ManagedReader;
@@ -135,6 +145,14 @@ internal static class AutoCommand
         int now = TurnNow(reader);
         if (EventShowing(reader)) Console.WriteLine("An event is on screen; run `auto plan` or `--advise` for the choice.");
         Console.WriteLine(now > startTurn ? $"Done: turn {startTurn} → {now}." : $"Turn is still {startTurn}.");
+        try
+        {
+            if (now <= startTurn && RaceEntryScreen.Read(reader.ManagedReader) is null && DialogButtons(reader.ManagedReader).Count == 0
+                && reader.Snapshot().Screen?.ViewController != "Gallop.SingleModeMainViewController")
+                Console.WriteLine("This screen is not automated yet (race screens after entry); continue by hand. " +
+                                  "`buttons --watch` records each screen so it can be added.");
+        }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { }
         return 0;
     }
 
@@ -149,6 +167,12 @@ internal static class AutoCommand
             WaitFor.Dialog => WaitUntil(() => DialogButtons(r).Count > 0 || TurnNow(reader) > startTurn, TimeSpan.FromSeconds(5), "dialog open", "no dialog appeared"),
             WaitFor.TurnAdvance => WaitUntil(() => TurnNow(reader) > startTurn || EventShowing(reader) || DialogButtons(r).Count > 0,
                 TimeSpan.FromSeconds(90), "screen moved on", "turn did not advance within 90 s"),
+            WaitFor.RaceList => WaitUntil(() => RaceEntryScreen.Read(r) is not null, TimeSpan.FromSeconds(8), "race list open", "race list did not open"),
+            WaitFor.RaceSelected => WaitUntil(() => RaceEntryScreen.Read(r) is { } list && list.SelectedProgramId ==
+                    (step.CommandId != 0 ? step.CommandId : list.Rows.FirstOrDefault(x => x.IsGoal && x.EntryState == 0)?.ProgramId),
+                TimeSpan.FromSeconds(5), "race selected", "race did not become selected"),
+            WaitFor.LeftRaceList => WaitUntil(() => RaceEntryScreen.Read(r) is null || DialogButtons(r).Count > 0,
+                TimeSpan.FromSeconds(10), "left the race list", "still on the race list"),
             _ => "done",
         };
     }
