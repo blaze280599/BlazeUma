@@ -190,9 +190,11 @@ internal static class RaceRunner
         int top = buttons.Where(b => b.Path.StartsWith("Dialog[")).Select(DialogIndex).Max();
         string title = DialogTitle(r, top) ?? "(untitled)";
         lockedNotice = title == LockedTitle;
+        // Reward item icons in a popup's contents only open the item's details (Trophy Won: the carat icon,
+        // Contents.DialogAddTrophy._itemListChild._itemIcon._button, beside Close), so they never count.
         var shown = buttons
             .Where(b => b.CanTap && DialogIndex(b) == top && (b.Path.Contains("._currentDialogObj.") || b.Path.Contains("._dialogObjArray[") || b.Path.Contains("].Contents."))
-                        && tapper.IsActive(b.Address) == true)
+                        && !b.Path.Contains("._itemIcon.") && tapper.IsActive(b.Address) == true)
             .DistinctBy(b => b.Address)   // _currentDialogObj is also one of the templates
             .ToList();
         if (shown.Count == 0)
