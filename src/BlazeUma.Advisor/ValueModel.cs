@@ -35,22 +35,44 @@ public sealed class ValueModel
         Targets = PlanTargets(ctx);
     }
 
-    /// <summary>Stamina a race distance needs by the end of the career (≈ 480 at 1600 m, 780 at 2500 m).</summary>
-    public static int StaminaFor(int distance) => (int)Math.Clamp(350 + (distance - 1200) * 0.33, 300, 1100);
+    /// <summary>Stamina stat for a full last spurt in a race of this distance with these Speed and Guts (<see cref="RaceStamina"/>).</summary>
+    public static int StaminaFor(CareerContext ctx, int distance, int speed, int guts) =>
+        RaceStamina.Required(distance, ctx.Style, speed, guts, ctx.Aptitude(Distances.Categorize(distance)));
+
+    /// <summary>A stat at a future turn, assuming it moves linearly from now toward its end-of-career target.</summary>
+    private static int Projected(CareerContext ctx, int now, int end, int turn) => now >= end ? now
+        : now + (int)((end - now) * Math.Clamp((turn - ctx.Turn) / (double)Math.Max(1, CareerContext.FinalTurn - ctx.Turn), 0, 1));
 
     /// <summary>
-    /// Targets follow uma.guide's stat priority for the 1400-cap URA (July patch): Speed capped, enough Stamina
-    /// for the longest goal, Power ~800–1000 (closers need more acceleration), Wit as high as possible, Guts optional.
+    /// Stamina for every remaining goal race at the Speed and Guts the trainee is projected to have by then; the
+    /// scenario finals (no race data) are taken at the route's longest goal distance near the end of the career.
+    /// </summary>
+    private static int StaminaTarget(CareerContext ctx, int speedTarget, int gutsTarget)
+    {
+        var c = ctx.Character;
+        var races = ctx.RemainingGoals.Where(g => g.Race is not null).Select(g => (g.Race!.Distance, g.Turn)).ToList();
+        if (ctx.RemainingGoals.Any(g => g.Race is null))
+            races.Add((ctx.Goals.Where(g => g.Race is not null).Select(g => g.Race!.Distance).DefaultIfEmpty(2000).Max(), CareerContext.FinalTurn));
+        return races.Select(r => StaminaFor(ctx, r.Distance,
+                Projected(ctx, c.Stats.Speed, speedTarget, r.Turn), Projected(ctx, c.Stats.Guts, gutsTarget, r.Turn)))
+            .DefaultIfEmpty(0).Max();
+    }
+
+    /// <summary>
+    /// Targets follow uma.guide's stat priority for the 1400-cap URA (July patch): Speed capped, Stamina for a
+    /// full last spurt in every remaining goal race, Power ~800–1000 (closers need more acceleration), Wit as high
+    /// as possible, Guts optional.
     /// </summary>
     private static StatTargets PlanTargets(CareerContext ctx)
     {
         var c = ctx.Character;
         bool front = ctx.Style is RunningStyle.FrontRunner or RunningStyle.PaceChaser;
+        int guts = Math.Min(350, c.MaxStats.Guts);
         var target = new Stats(
             Speed: c.MaxStats.Speed,
-            Stamina: Math.Min(StaminaFor(ctx.LongestRemainingDistance), c.MaxStats.Stamina),
+            Stamina: Math.Min(StaminaTarget(ctx, c.MaxStats.Speed, guts), c.MaxStats.Stamina),
             Power: Math.Min(front ? 900 : 1000, c.MaxStats.Power),
-            Guts: Math.Min(350, c.MaxStats.Guts),
+            Guts: guts,
             Wit: Math.Min(1000, c.MaxStats.Wit));
 
         var weights = new Dictionary<int, double>();
@@ -63,10 +85,12 @@ public sealed class ValueModel
             weights[stat] = weight;
         }
 
-        // A goal race soon that the trainee lacks stamina for: stamina becomes urgent (once, however many goals).
+        // A goal race soon that the trainee lacks stamina for at today's Speed and Guts: stamina becomes urgent
+        // (once, however many goals). Earlier fields are weak and don't need a full spurt to beat (a Junior debut
+        // at Speed 250 / Guts 150 would "need" ~800), so only part of the requirement counts before Senior year.
         double yearShare = ctx.Date.Year switch { 1 => 0.5, 2 => 0.75, _ => 1.0 };
         if (ctx.RemainingGoals.Any(g => g.Race is not null && g.Turn - ctx.Turn <= 12
-                && c.Stats.Stamina < StaminaFor(g.Race.Distance) * yearShare))
+                && c.Stats.Stamina < StaminaFor(ctx, g.Race.Distance, c.Stats.Speed, c.Stats.Guts) * yearShare))
             weights[ParamIds.Stamina] *= 1.5;
         return new StatTargets(target, weights);
     }

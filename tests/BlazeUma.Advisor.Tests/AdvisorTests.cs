@@ -232,7 +232,8 @@ public class ValueModelTests
     {
         var model = Model(stats: new Stats(1404, 100, 140, 140, 110));
         Assert.Equal(0, model.Weight(ParamIds.Speed));
-        Assert.Equal(ValueModel.StaminaFor(2500), model.Targets.Target.Stamina);
+        // Arima Kinen 2500 m at capped Speed drives the target: a pace chaser needs ~1100+ (checked in Umalator).
+        Assert.InRange(model.Targets.Target.Stamina, 1100, 1404);
     }
 }
 
@@ -423,5 +424,44 @@ public class BondValueTests
         Assert.Equal(0, Model().BondTrainingValue(80, TrainingIds.Speed, Typical));
         Assert.Equal(0, Model(turn: 70).BondTrainingValue(0, TrainingIds.Speed, Typical));
         Assert.True(Model(turn: 70).BondTrainingValue(76, TrainingIds.Speed, Typical) > 0);
+    }
+}
+
+/// <summary>Stamina requirements from the race HP formulas, pinned to Umalator runs (no skills, Normal mood, firm, A aptitude).</summary>
+public class RaceStaminaTests
+{
+    private const int A = 7;
+
+    [Fact]
+    public void LastSpurtSpeed_MatchesUmalatorsTopSpeed()
+    {
+        // Umalator max m/s, Nakayama 2500, Speed 1200 Guts 400: pace chaser 23.71, late surger 24.10 (includes downhills).
+        Assert.InRange(RaceStamina.LastSpurtSpeed(2500, RunningStyle.PaceChaser, 1200, 400, A), 23.3, 23.8);
+        Assert.InRange(RaceStamina.LastSpurtSpeed(2500, RunningStyle.LateSurger, 1200, 400, A), 23.7, 24.2);
+    }
+
+    [Theory]
+    // Umalator spurt rates: PC 2500 — 81% at 1050, 96% at 1100, 98% at 1200; LS 2500 — 94% at 1000, 98% at 1100;
+    // PC 1600 — 87% at 500, 97% at 600. The requirement should land near the 95% point.
+    [InlineData(2500, RunningStyle.PaceChaser, 1050, 1200)]
+    [InlineData(2500, RunningStyle.LateSurger, 1000, 1100)]
+    [InlineData(1600, RunningStyle.PaceChaser, 500, 600)]
+    public void Required_LandsNearUmalatorsFullSpurtPoint(int distance, RunningStyle style, int low, int high)
+    {
+        Assert.InRange(RaceStamina.Required(distance, style, 1200, 400, A), low, high);
+    }
+
+    [Fact]
+    public void LongRace_IsOutOfReachWithoutRecoverySkills()
+    {
+        // Kyoto 3000 pace chaser: Umalator spurt rate 0% even at 1400 Stamina.
+        Assert.True(RaceStamina.Required(3000, RunningStyle.PaceChaser, 1200, 400, A) > 1400);
+    }
+
+    [Fact]
+    public void PaceChasers_NeedMoreThanLateSurgers_AndSlowerTraineesLess()
+    {
+        Assert.True(RaceStamina.Required(2500, RunningStyle.PaceChaser, 1200, 400, A) > RaceStamina.Required(2500, RunningStyle.LateSurger, 1200, 400, A));
+        Assert.True(RaceStamina.Required(2000, RunningStyle.PaceChaser, 400, 200, A) < RaceStamina.Required(2000, RunningStyle.PaceChaser, 1200, 200, A));
     }
 }
