@@ -141,6 +141,19 @@ public class AdvisorTests
     }
 
     [Fact]
+    public void FansFromAnEarlierGoalRace_CountTowardALaterRequirement()
+    {
+        // 6,000 fans: Shuka Sho (turn 44) needs 7,500; the Tulip Sho on turn 29 is raced anyway (~+2,400).
+        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(fans: 6000), turn: 28), _data);
+        var race = new RaceEvaluator(ctx, new ValueModel(ctx)).Evaluate(FakeGameData.Niigata);
+        Assert.Contains(race.Reasons, r => r.Contains("earlier goal races"));
+        Assert.True(race.Score < 15, race.ToString());
+
+        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(fans: 6000), turn: 28));
+        Assert.DoesNotContain(advice.Notes, n => n.Label == "Warning");
+    }
+
+    [Fact]
     public void BadMood_LowersRaceValue() =>
         Assert.True(Races(mood: Mood.Bad).Evaluate(FakeGameData.Niigata).Score < Races().Evaluate(FakeGameData.Niigata).Score);
 }
@@ -204,6 +217,16 @@ public class ValueModelTests
     }
 
     [Fact]
+    public void StaminaUrgency_AppliesOnce_EvenWithSeveralGoalsAhead()
+    {
+        // Turn 28 with low stamina: Tulip Sho, and later goals within 12 turns in the real route, must not stack.
+        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(stats: new Stats(300, 166, 186, 243, 166)), turn: 28),
+            new FakeGameData());
+        double weight = new ValueModel(ctx).Weight(ParamIds.Stamina);
+        Assert.InRange(weight, 0.5, 1.5 * 1.0);   // at most one ×1.5 on a priority-1.0 stat
+    }
+
+    [Fact]
     public void StatAtCap_HasNoValue_AndStaminaTargetFollowsLongestGoal()
     {
         var model = Model(stats: new Stats(1404, 100, 140, 140, 110));
@@ -229,6 +252,15 @@ public class SkillAdvisorTests
     }
 
     [Fact]
+    public void Fit_DiscountsSituationalAndSkillCountConditions()
+    {
+        var advisor = Advisor();   // Daiwa owns one skill (Red Ace)
+        Assert.Equal(0.25, advisor.Fit("activate_count_later_half>=2"));      // Racing Spirit: Wit
+        Assert.Equal(0.6, advisor.Fit("phase==3&is_overtake==1&is_lastspurt==1"), 3);   // Racing Spirit: Power
+        Assert.Equal(1, advisor.Fit("phase==3&is_lastspurt==1"));
+    }
+
+    [Fact]
     public void Predicted_AppliesHintDiscount()
     {
         var rosy = Advisor().Predicted().Single(c => c.Skill.Id == 200712);
@@ -245,5 +277,8 @@ public class SkillAdvisorTests
         Assert.NotEmpty(buy);
         Assert.True(buy.Sum(b => b.Price) <= 400);
         Assert.DoesNotContain(buy, b => b.Skill.Name == "Sprint Thing");
+        // Tulip Sho is a 1600 m mile: medium-only skills wait for a medium race.
+        Assert.DoesNotContain(buy, b => b.Skill.Name is "Rosy Outlook" or "Up-Tempo");
+        Assert.Contains(buy, b => b.Skill.Name == "Preferred Position");   // pace chaser, any distance
     }
 }

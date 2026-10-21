@@ -29,7 +29,14 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         if (mood < 3)
             reasons.Add($"mood {ctx.Character.Mood} lowers the chance to place ({placeChance:P0})");
 
-        if (ctx.FanShortfall() is var (goal, shortfall))
+        var fanNeed = ctx.FanShortfall();
+        int fromGoals = fanNeed is var (needGoal, _) ? ctx.ExpectedGoalFansBefore(needGoal.Turn) : 0;
+        if (fanNeed is var (covered, need) && fromGoals >= need)
+        {
+            score += expectedFans / 1000;
+            reasons.Add($"{need} fans for {covered.Name} should come from earlier goal races (~+{fromGoals}) (+{expectedFans / 1000:0.0})");
+        }
+        else if (fanNeed is var (goal, shortfall))
         {
             // Missing a goal's fan requirement fails the goal and ends the career, so the fans must be won
             // before the deadline. With few race turns left, race early enough to have a retry.
@@ -74,8 +81,12 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
 
     private int? _suitableTurns;
 
-    /// <summary>Later turns before <paramref name="goalTurn"/> with an enterable race at B+ aptitude.</summary>
+    /// <summary>
+    /// Later turns before <paramref name="goalTurn"/> with an enterable race at B+ aptitude. Goal turns are
+    /// excluded: the goal race takes the turn.
+    /// </summary>
     private int SuitableTurnsBefore(int goalTurn) => _suitableTurns ??= Enumerable.Range(ctx.Turn + 1, Math.Max(0, goalTurn - ctx.Turn - 1))
+        .Where(t => !ctx.IsGoalTurn(t))
         .Count(t => ctx.Data.ProgramsForTurn(t).Any(r =>
             r.Grade != (int)RaceGrade.Maiden && r.NeedFans <= ctx.Character.Fans
             && ctx.Aptitude(r.Category) >= MinAptitude && ctx.Aptitude(r.Ground) >= MinAptitude));

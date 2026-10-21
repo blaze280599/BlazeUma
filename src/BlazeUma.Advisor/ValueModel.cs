@@ -59,13 +59,11 @@ public sealed class ValueModel
             weights[stat] = weight;
         }
 
-        // A goal race soon that the trainee lacks stamina for: stamina becomes urgent.
-        foreach (var goal in ctx.RemainingGoals.Where(g => g.Race is not null && g.Turn - ctx.Turn <= 12))
-        {
-            double yearShare = ctx.Date.Year switch { 1 => 0.5, 2 => 0.75, _ => 1.0 };
-            if (c.Stats.Stamina < StaminaFor(goal.Race!.Distance) * yearShare)
-                weights[ParamIds.Stamina] *= 1.5;
-        }
+        // A goal race soon that the trainee lacks stamina for: stamina becomes urgent (once, however many goals).
+        double yearShare = ctx.Date.Year switch { 1 => 0.5, 2 => 0.75, _ => 1.0 };
+        if (ctx.RemainingGoals.Any(g => g.Race is not null && g.Turn - ctx.Turn <= 12
+                && c.Stats.Stamina < StaminaFor(g.Race.Distance) * yearShare))
+            weights[ParamIds.Stamina] *= 1.5;
         return new StatTargets(target, weights);
     }
 

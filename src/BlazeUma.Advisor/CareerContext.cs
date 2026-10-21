@@ -62,6 +62,15 @@ public sealed class CareerContext
         return null;
     }
 
+    /// <summary>Share of 1st-place fans assumed for a goal race (a mid-pack finish; top 5 pays 10–100%).</summary>
+    public const double GoalRaceFanShare = 0.4;
+
+    /// <summary>Fans expected from goal races still to run before <paramref name="turn"/> (each is raced anyway).</summary>
+    public int ExpectedGoalFansBefore(int turn) =>
+        (int)RemainingGoals.Where(g => g.Turn < turn && g.Race is not null).Sum(g => g.Race!.FirstPlaceFans * GoalRaceFanShare);
+
+    public bool IsGoalTurn(int turn) => Goals.Any(g => g.Turn == turn);
+
     public int Aptitude(DistanceCategory category) => category switch
     {
         DistanceCategory.Sprint => Character.Aptitudes.Sprint,

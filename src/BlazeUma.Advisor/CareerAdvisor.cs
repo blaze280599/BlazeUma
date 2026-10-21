@@ -30,8 +30,13 @@ public sealed class CareerAdvisor(IGameData data)
                 (next.Turn > ctx.Turn ? $" (in {next.Turn - ctx.Turn})" : " (today)") +
                 (next.RequiredPlace > 0 ? $", need top {next.RequiredPlace}" : "")));
         if (ctx.FanShortfall() is var (fanGoal, shortfall))
-            notes.Add(new Note(fanGoal.Turn - ctx.Turn <= 4 ? "Warning" : "Fans",
-                $"{shortfall} more fans needed to enter {fanGoal.Name} (turn {fanGoal.Turn}); missing it fails the goal"));
+        {
+            int fromGoals = ctx.ExpectedGoalFansBefore(fanGoal.Turn);
+            notes.Add(fromGoals >= shortfall
+                ? new Note("Fans", $"{shortfall} more needed for {fanGoal.Name} (turn {fanGoal.Turn}); earlier goal races should cover it (~+{fromGoals})")
+                : new Note(fanGoal.Turn - ctx.Turn <= 4 ? "Warning" : "Fans",
+                    $"{shortfall} more fans needed to enter {fanGoal.Name} (turn {fanGoal.Turn}); missing it fails the goal"));
+        }
         var details = new List<string>
         {
             $"stat weights Spd {w[ParamIds.Speed]:0.00}  Sta {w[ParamIds.Stamina]:0.00}  Pow {w[ParamIds.Power]:0.00}  Gut {w[ParamIds.Guts]:0.00}  Wit {w[ParamIds.Wit]:0.00}",

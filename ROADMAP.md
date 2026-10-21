@@ -41,11 +41,25 @@ Work through these in order, one at a time. Each item says how we know it is don
    because `race_permission` 5 was treated as "any year"; every permission-5 program is a URA Finale race,
    so 5 now means the finale period only. Fan requirements for goals are now urgent when two or fewer
    race turns remain before the deadline (missing one fails the goal), with a warning note.
+   Turn 26: after winning the Wakagoma Stakes, Reporter Otonashi's scene (+500 fans, +15 bond) played and
+   the log has no event record for it, so `LooksActive` (StoryViewController save/select flags) seems to
+   be true only for events with choices. Fine for advice; automation (item 8) needs another "a story is
+   playing" signal, e.g. SceneManager/StoryManager view state.
    *Done when:* two or more events checked, `LooksActive` confirmed or replaced.
 
-5. [ ] **Skill screen advice, live** (live: Skills screen, ideally the turn before Tulip Sho)
+5. [x] **Skill screen advice, live** (live: Skills screen, ideally the turn before Tulip Sho)
    Check fit/price ranking and that it buys on the turn before a goal race and saves otherwise.
    *Done when:* the buy list is something you'd agree with; hint discounts above level 1 confirmed.
+   Turn 28 fixes (before the Tulip Sho): skills needing other skills to fire (`activate_count_*`,
+   e.g. Racing Spirit: Wit) count 25% unless the trainee owns enough skills; situational clauses
+   (overtaking, boxed in) count 60%; before a goal race only skills that work at that race's distance and
+   surface are bought (Rosy Outlook / Up-Tempo wait for a medium goal). Also fixed: fans expected from
+   goal races in between (~40% of 1st-place fans) now count toward a later goal's fan requirement, and
+   goal turns no longer count as optional race turns, so turn 28 stopped recommending a race at 31 energy.
+   Live shop (turn 28): prices and discounts read from memory; hint level 2 = 20% confirmed (Steadfast
+   160 → 128); gold skills are priced with their white prerequisite (Sturm und Drang 342 = 162 + 180).
+   Buy list: Preferred Position + Pace Chaser Savvy ◎ (297 of 341 SP). Also found and fixed: the stamina
+   urgency boost stacked once per upcoming goal (weight 2.84); it now applies once (1.26).
 
 6. [ ] **Measure estimates** (live, uses the turn log)
    Friend outing energy/mood, rest energy, race skill points and stats per grade. Replace the
@@ -54,6 +68,9 @@ Work through these in order, one at a time. Each item says how we know it is don
    Measured so far: Light Hello outing = mood +1 and bond +5 (twice). Energy not measurable yet (was
    full). The chain event at step 3 was worth far more than the +8 estimate (Spd +20 / Gut +20, or
    energy +80), so `OutingChainStepValue` is likely too low.
+   OP race, 1st place (Wakagoma Stakes, turn 26): energy −15 (estimate −15), Wit +5 (estimate 5),
+   skill points +32 (estimate 25), fans +2,419 from the race (base 2,000, so about +21% bonus) plus
+   +500 from the reporter's post-race scene.
 
 7. [ ] **Game restart** (live: close and reopen the game mid-career)
    The reader should reattach with no changes.
