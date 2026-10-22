@@ -240,7 +240,7 @@ message says which logged picks it changed. The logs are thin so far (~24 record
 
 **Wave 5** (one after the other: both touch `TurnAdvisor`)
 - A9. [x] **Per-condition costs** (Infirmary, Rest & Recreation, event effects).
-- A10. [ ] **Hint value from the card's real hint skills** (fit × rating × discount).
+- A10. [x] **Hint value from the card's real hint skills** (fit × rating × discount).
 
 ## Later
 
