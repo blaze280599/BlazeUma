@@ -27,7 +27,7 @@ internal static class RaceRunner
     /// <summary>Shown when View Results is tapped for a race never watched before (padlock on the button).</summary>
     private const string LockedTitle = "Unlock Requirements";
     /// <summary>Popups that follow a race; open on the home screen they still mean the race is being finished.</summary>
-    private static readonly string[] AfterRaceTitles = [EntryConfirmTitle, "Goal Achieved"];
+    private static readonly string[] AfterRaceTitles = [EntryConfirmTitle, GoalAchievedTitle];
     /// <summary>
     /// The turn counter moves on before the after-race popups and the new-month screen, so home only counts
     /// as done once it has stayed home with no dialog for this long (trace gaps were 2–3 s).
@@ -39,6 +39,10 @@ internal static class RaceRunner
     [
         // View Results plays the placing cut-in ("4th", TAP) over the paddock, whose buttons stay active under it.
         new("Gallop.SingleModePaddockViewController", "Controller._cutinParent._tapButton", "Tap through the placing", Repeat: true),
+        // After View Results the results list ("Congratulations on the win!", placings, Next) opens over the paddock,
+        // not on the race screen (seen live after a skipped Junior Make Debut).
+        new("Gallop.SingleModePaddockViewController", "Controller._resultList._singleModeNextButton", "Next (leave the results)"),
+        new("Gallop.SingleModePaddockViewController", "Controller._resultList._nextButton", "Next (leave the results)"),
         new("Gallop.SingleModePaddockViewController", "View.PaddockContentsHolder._raceSkipButton", "View Results (skip watching the race)"),
         // View Results is locked until a race has been watched once; then the race is run and skipped in-race.
         new("Gallop.SingleModePaddockViewController", "View.PaddockContentsHolder._raceStartButtonRight", "Race (View Results is locked)"),
@@ -89,6 +93,13 @@ internal static class RaceRunner
                 if (screen == Home && EventWithChoices(r))
                 {
                     Console.WriteLine("   An event with choices is showing; handing over to answer it.");
+                    return 0;
+                }
+                // The inspiration cutscene (GO!) follows the new month at the start of the Classic and Senior years;
+                // the auto bot taps it (seen live after a new month on turn 31).
+                if (screen == AutoBot.InspirationScreen)
+                {
+                    Console.WriteLine("   The inspiration cutscene is showing; handing over to tap GO!.");
                     return 0;
                 }
                 if (screen != Home || dialogOpen) settled.Restart();
@@ -268,6 +279,24 @@ internal static class RaceRunner
         }
         return tapper.Tap(button.Address);
     }
+
+    /// <summary>
+    /// Closes "Goal Achieved" (GOAL COMPLETE!, Next) when it opens on the home screen outside a race: a fan goal
+    /// met by a training (seen live, turn 30). True when Next was tapped and the popup went; false when it isn't
+    /// open or its Next isn't showing yet.
+    /// </summary>
+    public static bool CloseGoalAchieved(GameReader reader, ButtonTapper tapper)
+    {
+        var r = reader.ManagedReader;
+        if (ActionPlanner.DialogTitle(r) != GoalAchievedTitle) return false;
+        var next = new ButtonFinder(r, includeDialogTemplates: true).FromCurrentScene()
+            .FirstOrDefault(b => b.CanTap && b.Path.EndsWith(".Contents.DialogSingleModeRouteClear._button") && tapper.IsActive(b.Address) == true);
+        if (next is null) return false;
+        Console.WriteLine(ConsoleUi.Dim($"   • Close \"{GoalAchievedTitle}\""));
+        return TapButton(r, tapper, next).StartsWith("ok") && WaitGone(r, tapper, next.Address);
+    }
+
+    private const string GoalAchievedTitle = "Goal Achieved";
 
     /// <summary>After a tap, give the button a moment to disappear so it is not tapped twice. False if it stayed.</summary>
     private static bool WaitGone(ManagedReader r, ButtonTapper tapper, ulong button)

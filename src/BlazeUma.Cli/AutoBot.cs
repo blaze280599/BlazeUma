@@ -188,6 +188,8 @@ internal sealed class AutoBot(BotControl control)
     /// <summary>Reads the game and carries out one advisor pick.</summary>
     private (Outcome, string?) Round(GameReader reader, CareerAdvisor advisor, MasterDatabase data)
     {
+        // A goal met outside a race (a fan goal reached by a training) opens "Goal Achieved" over the home screen.
+        if (RaceRunner.CloseGoalAchieved(reader, new ButtonTapper(reader))) { Thread.Sleep(Settle); return (Outcome.Done, null); }
         var snapshot = _log!.Stamp(reader.Snapshot());
         if (snapshot.Screen?.ViewController == InspirationScreen) return (Inspiration(reader), null);
         var advice = advisor.Advise(snapshot);
@@ -197,6 +199,9 @@ internal sealed class AutoBot(BotControl control)
         string? action =
             RaceRunner.InProgress(reader.ManagedReader) ? ActionPlanner.GoalRace   // left mid-race (pause, by hand)
             : advice.Situation == Situation.Event ? advice.Best?.Label
+            // Back on the race list after an event interrupted entering a race: carry on with that race, or (after
+            // a restart, when the bot doesn't know what it was doing) the race list's own pick.
+            : advice.Situation == Situation.RaceList ? RaceListAction(advice, turn)
             : advice.Situation == Situation.SkillShop ? ActionPlanner.LearnSkills
             // The last screen: spend the skill points once (the skill screen's Back returns here), then finish.
             : advice.Situation == Situation.CareerEnd
@@ -254,7 +259,13 @@ internal sealed class AutoBot(BotControl control)
         var result = Execute(reader, plan, turn, out string? problem, out bool actionTapped);
         // A turn action whose own tap went through and then led to an event (Happy Meek's challenge, a card
         // event…) has used the turn. An event that pops up before that tap (turn 40's camp event) has not.
-        if (result == Outcome.Done && actionTapped && !plan.IsEvent && TurnNow(reader) == turn && EventShowing(reader)) _spentTurn = turn;
+        // Opening or using the skill screen doesn't use the turn: an event after Tap Skills (turn 41's Dance Lesson)
+        // left the bot waiting for a turn that never came.
+        bool usesTurn = action is not (ActionPlanner.OpenSkills or ActionPlanner.LearnSkills or ActionPlanner.FinalSkills);
+        if (result == Outcome.Done && actionTapped && usesTurn && !plan.IsEvent && TurnNow(reader) == turn && EventShowing(reader)) _spentTurn = turn;
+        // An event over the race list before the race was entered: the turn is still free, finish entering it after.
+        if (result == Outcome.Done && plan.RunsRace && !actionTapped && TurnNow(reader) == turn && EventShowing(reader))
+            _interruptedRace = (turn, action);
         // Finish tapped on "Complete Career": the career is over; the stats were read just before.
         if (result == Outcome.Done && actionTapped && action == ActionPlanner.CompleteCareer)
         {
@@ -265,8 +276,22 @@ internal sealed class AutoBot(BotControl control)
         return (result, problem);
     }
 
+    /// <summary>The race plan an event interrupted on the race list, and its turn.</summary>
+    private (int Turn, string Action)? _interruptedRace;
+
+    /// <summary>
+    /// What to do on the race list: the race an event interrupted this turn, else the list's best race (a goal row
+    /// is the goal race); null when its pick is not to race, so the screen is left to the user.
+    /// </summary>
+    private string? RaceListAction(Advice advice, int turn)
+    {
+        if (_interruptedRace is { } interrupted && interrupted.Turn == turn) return interrupted.Action;
+        if (advice.Best is not { Score: > 0 } best || best.Label.StartsWith("Don't race:")) return null;
+        return best.Reasons.Contains("career goal") ? ActionPlanner.GoalRace : $"Race: {best.Label}";
+    }
+
     /// <summary>The inspiration (succession) cutscene: one GO! button (Senior Early Mar, turn 55).</summary>
-    private const string InspirationScreen = "Gallop.SingleModeSuccessionEventViewController";
+    internal const string InspirationScreen = "Gallop.SingleModeSuccessionEventViewController";
     private const string InspirationButton = "View.SuccessionButton";
 
     /// <summary>Taps GO! once and waits for the cutscene to move on; taps again only if GO! is still showing (3 tries).</summary>
