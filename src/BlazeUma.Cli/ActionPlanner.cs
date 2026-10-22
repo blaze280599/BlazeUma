@@ -239,7 +239,10 @@ internal static class ActionPlanner
         ], RunsRace: true);
     }
 
-    /// <summary>The advisor's event option labels: "Top choice" = 1, "Bottom choice" = 2, "Choice N" = N.</summary>
+    /// <summary>
+    /// The advisor's event option labels, as on-screen positions: "Top choice" = 1, "Bottom choice" = 2 (two-choice
+    /// events only), "Choice N" = Nth from the top.
+    /// </summary>
     public static int? EventChoiceNumber(string action) =>
         action.Equals("Top choice", StringComparison.OrdinalIgnoreCase) ? 1
         : action.Equals("Bottom choice", StringComparison.OrdinalIgnoreCase) ? 2

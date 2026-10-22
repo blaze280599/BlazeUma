@@ -47,7 +47,7 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values, EventOdds
             }
             if (p is null && choice.Outcomes.Count > 1) reasons.Add("odds unknown; outcomes weighted equally");
             expected += MeasuredRisks(choice, story, reasons);
-            options.Add(new ScoredOption(choice.Choice == 1 ? "Top choice" : choice.Choice == 2 ? "Bottom choice" : $"Choice {choice.Choice}", expected, reasons));
+            options.Add(new ScoredOption(Label(options.Count, choices.Count), expected, reasons));
         }
 
         // Recurring scenario events with a known best answer override the preview estimate.
@@ -62,6 +62,13 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values, EventOdds
         }
         return options.OrderByDescending(o => o.Score).ToList();
     }
+
+    /// <summary>
+    /// Label by on-screen position, not the game's choice number: an event can number its choices 3, 4, 6.
+    /// ActionPlanner maps these back to <c>Story.ChoiceButtons</c> indices.
+    /// </summary>
+    private static string Label(int index, int count) =>
+        count == 2 ? (index == 0 ? "Top choice" : "Bottom choice") : $"Choice {index + 1}";
 
     private const int ExtraTraining = 715;
 

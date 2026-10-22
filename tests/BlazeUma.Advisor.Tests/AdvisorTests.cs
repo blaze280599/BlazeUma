@@ -429,10 +429,10 @@ public class UmaGuideRuleTests
     ];
 
     [Theory]
-    [InlineData(25, 60, "Bottom choice")]        // Classic: energy fits
+    [InlineData(25, 60, "Choice 2")]        // Classic: energy fits
     [InlineData(25, 90, "Choice 3")]        // Classic: energy would overflow → SP
     [InlineData(49, 70, "Choice 3")]        // Senior: Raffle next turn → SP
-    [InlineData(49, 30, "Bottom choice")]        // Senior: too low to train
+    [InlineData(49, 30, "Choice 2")]        // Senior: too low to train
     public void NewYear_FollowsTheGuide(int turn, int energy, string expected)
     {
         Assert.Equal(expected, Advise(turn, energy, ClassicNewYear, 101).Best!.Label);
@@ -448,11 +448,26 @@ public class UmaGuideRuleTests
     }
 
     [Fact]
+    public void EventLabels_AreScreenPositions_NotGameChoiceNumbers()
+    {
+        // Happy Meek's Challenge! numbers its choices 3, 4, 6; the best (6) is the third button on screen.
+        var choices = new List<EventChoice>
+        {
+            new(3, [[Param(ParamIds.Power, 5)]]),
+            new(4, [[Param(ParamIds.Guts, 5)]]),
+            new(6, [[Param(ParamIds.Speed, 30)]]),
+        };
+        var ranked = Advise(30, 50, choices, 999).Options;
+        Assert.Equal("Choice 3", ranked[0].Label);
+        Assert.Equal(["Choice 1", "Choice 2", "Choice 3"], ranked.Select(o => o.Label).Order());
+    }
+
+    [Fact]
     public void Acupuncturist_TakesWinningChakra()
     {
         var all20 = new List<EventEffect> { new(13, 20, 0, 0) };
         var choices = Enumerable.Range(1, 5).Select(i => new EventChoice(i, [i == 1 ? all20 : [Param(ParamIds.Energy, 10)]])).ToList();
-        Assert.Equal("Bottom choice", Advise(30, 50, choices, 720).Best!.Label);
+        Assert.Equal("Choice 2", Advise(30, 50, choices, 720).Best!.Label);
     }
 }
 
