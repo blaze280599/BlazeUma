@@ -66,6 +66,8 @@ public class AdvisorTests
         var advice = Advise(snapshot);
         Assert.Equal(Situation.SkillShop, advice.Situation);
         Assert.Equal([200282], advice.SkillsToBuy!);
+        Assert.Equal(["✓ Competitive Spirit ○ (selected)", "then Confirm and Learn (10 SP left)"],
+            advice.Notes.TakeWhile(n => n.Label != "Why" && n.Label is "Press +" or "").Select(n => n.Text));
     }
 
     [Fact]

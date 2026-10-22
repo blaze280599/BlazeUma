@@ -115,6 +115,18 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
         string summary = buy.Count > 0
             ? $"Buy {string.Join(", ", buy.Select(b => b.Steps.Count > 1 ? $"{b.Skill.Name} ({Presses(b)})" : b.Skill.Name))}"
             : "Buy nothing yet";
+        // One line per skill to buy, ticked once all its presses are selected, so the whole plan shows at a glance.
+        var steps = new List<Note>();
+        foreach (var b in buy)
+        {
+            int left = b.Steps.Count(id => shop.Skills.First(s => s.SkillId == id) is { Selected: false });
+            string step = left == 0 ? $"✓ {b.Skill.Name} (selected)"
+                : $"{b.Skill.Name}: {(left == b.Steps.Count ? Presses(b) : $"press + {(left == 1 ? "once" : $"{left} times")} more")}";
+            steps.Add(new Note(steps.Count == 0 ? "Press +" : "", step));
+        }
+        if (buy.Count > 0)
+            steps.Add(new Note("", $"then Confirm and Learn ({points - buy.Sum(b => b.Price)} SP left)"));
+        notes.InsertRange(0, steps);
         notes.Add(new Note("Why", why));
         return new Advice(Situation.SkillShop, header, summary, options, notes, details, buy.SelectMany(b => b.Steps).ToList());
     }
