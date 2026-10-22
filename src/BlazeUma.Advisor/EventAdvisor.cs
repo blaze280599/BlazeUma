@@ -38,6 +38,7 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values)
                 reasons.Add($"{weight:P0}: {string.Join(", ", parts.Select(x => x.Text))} ({value:+0.0;-0.0})");
             }
             if (p is null && choice.Outcomes.Count > 1) reasons.Add("odds unknown; outcomes weighted equally");
+            expected += MeasuredRisks(choice, story, reasons);
             options.Add(new ScoredOption(choice.Choice == 1 ? "Top choice" : choice.Choice == 2 ? "Bottom choice" : $"Choice {choice.Choice}", expected, reasons));
         }
 
@@ -52,6 +53,34 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values)
             }
         }
         return options.OrderByDescending(o => o.Score).ToList();
+    }
+
+    private const int ExtraTraining = 715, SlowMetabolism = 4;
+
+    /// <summary>
+    /// Hidden chances the preview does not show (umareference.com percentages-of-events): a +30 energy option
+    /// gives Slow Metabolism 10% of the time; Extra Training's +5 stat / −5 energy option cures a bad
+    /// condition 20% of the time.
+    /// </summary>
+    private double MeasuredRisks(EventChoice choice, StoryEvent? story, List<string> reasons)
+    {
+        static bool Energy(EventEffect e, int amount) =>
+            e.Value0 == ParamIds.Energy && (amount > 0 ? e.DisplayId is 1 or 39 && e.Value1 == amount : e.DisplayId is 2 or 38 && e.Value1 == -amount);
+        var effects = choice.Outcomes.SelectMany(o => o).ToList();
+        double value = 0;
+        if (effects.Any(e => Energy(e, 30)) && !effects.Any(e => e.DisplayId is 9 or 37 or 40 && e.Value0 == SlowMetabolism))
+        {
+            value -= 0.1 * ValueModel.BadConditionValue;
+            reasons.Add($"+30 energy: 10% Slow Metabolism (-{0.1 * ValueModel.BadConditionValue:0.0})");
+        }
+        bool extraTraining = story is { StoryId: var id } && id / 1_000_000 == 501 && id % 1000 == ExtraTraining;
+        if (extraTraining && choice.Outcomes.Count > 0 && choice.Outcomes[0].Any(e => Energy(e, -5))
+            && ctx.Character.Conditions.Select(ctx.Data.Condition).Any(c => c is { IsBad: true }))
+        {
+            value += 0.2 * ValueModel.BadConditionValue;
+            reasons.Add($"20% chance to cure a bad condition (+{0.2 * ValueModel.BadConditionValue:0.0})");
+        }
+        return value;
     }
 
     private const int NewYearResolutions = 101, NewYearShrine = 102, SummerCampYear2 = 104, Acupuncturist = 720;

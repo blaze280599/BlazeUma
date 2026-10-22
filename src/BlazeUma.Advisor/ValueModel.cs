@@ -20,7 +20,8 @@ public sealed class ValueModel
     };
 
     public const double SkillPointValue = 0.35;
-    public const double ExpectedRestEnergy = 50;
+    /// <summary>Gaining a general bad condition (Night Owl, Slow Metabolism …); the same 15 events use for "become X".</summary>
+    public const double BadConditionValue = 15;
     public const double BondValuePerPartner = 3;
     public const double HintValue = 4;
     public const int FriendshipBond = 80;

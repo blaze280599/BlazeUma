@@ -11,6 +11,26 @@ public class TurnRecorderTests
         Snapshots.Snapshot(c, turn: turn, lastTraining: lastTraining, story: story);
 
     [Fact]
+    public void EventResult_MatchesTheOutcomeThatHappened()
+    {
+        var c = Snapshots.Daiwa(energy: 60, mood: Mood.Normal);
+        var story = new StoryEvent(501009715, 1, 1009, 0, 42, LooksActive: true);
+        var choices = new List<EventChoice>
+        {
+            new(1, [[new EventEffect(1, ParamIds.Speed, 10, 0)]]),                                        // Speed +10
+            new(2, [[new EventEffect(1, ParamIds.Energy, 30, 0)], [new EventEffect(1, ParamIds.Mood, 1, 0)]]), // energy +30, or mood +1
+        };
+        var atEvent = Snapshots.Snapshot(c, turn: 20, story: story, choices: choices);
+        var after = Snapshots.Snapshot(c with { Mood = Mood.Good }, turn: 20);
+
+        var recorder = new TurnRecorder();
+        recorder.Observe(atEvent, EventScreen());
+        var result = recorder.Observe(after, Home()).Single(r => r.Kind == "event-result").Result!;
+
+        Assert.Equal((501009715, 2, 2, 0.0), (result.StoryId, result.Choice, result.Outcome, result.MatchError));
+    }
+
+    [Fact]
     public void Compare_MeasuresChanges_AndInfersTraining()
     {
         var before = Snapshots.Daiwa(energy: 80, mood: Mood.Normal);

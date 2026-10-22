@@ -42,6 +42,8 @@ internal sealed class AutoBot(BotControl control)
     private int _spentTurn = -1;
     /// <summary>The turn the skill screen was last opened for, so it is opened at most once a turn.</summary>
     private int _skillsTurn = -1;
+    /// <summary>The same career log as Advisor mode (turns, events and what each event did), next to the exe.</summary>
+    private CareerLog? _log;
 
     public Mode Run()
     {
@@ -104,6 +106,7 @@ internal sealed class AutoBot(BotControl control)
         _skillsTurn = -1;
         _actionsThisTurn = 0;
         int failures = 0;
+        _log = CareerLog.Create();
 
         Console.WriteLine();
         Console.WriteLine("  " + ConsoleUi.Bold("Playing.") + ConsoleUi.Dim("  Insert = pause · Page Down = stop (they work while the game has focus)"));
@@ -170,6 +173,7 @@ internal sealed class AutoBot(BotControl control)
         var snapshot = reader.Snapshot();
         if (snapshot.Screen?.ViewController == InspirationScreen) return (Inspiration(reader), null);
         var advice = advisor.Advise(snapshot);
+        _log?.Observe(snapshot, advice);
         int turn = snapshot.Turn ?? 0;
 
         string? action =

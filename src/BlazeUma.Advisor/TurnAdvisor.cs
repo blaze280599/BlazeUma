@@ -133,8 +133,14 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
 
     private ScoredOption Rest()
     {
-        double v = values.Energy(ValueModel.ExpectedRestEnergy);
-        var reasons = new List<string> { $"energy {ctx.Character.Energy} +~{ValueModel.ExpectedRestEnergy} ({v:+0.0})" };
+        double v = RestOutcomes.Sum(o => o.Chance * values.Energy(o.Energy));
+        double nightOwl = RestOutcomes.Where(o => o.NightOwl).Sum(o => o.Chance) * ValueModel.BadConditionValue;
+        var reasons = new List<string>
+        {
+            $"energy {ctx.Character.Energy} +70 / +50 / +30 (25% / 62.5% / 12.5%) ({v:+0.0})",
+            $"2.5% Night Owl (-{nightOwl:0.0})",
+        };
+        v -= nightOwl;
 
         // uma.guide: enter summer camp with high energy. Low energy now means a rest during camp later, which
         // costs a level-5 training instead of an ordinary one; how low decides how likely that rest is.
@@ -171,6 +177,14 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         return new ScoredOption(RestAndRecreationLabel, energy + mood + 25 * bad.Count, reasons);
     }
 
+    /// <summary>Rest outcomes measured by umareference.com (percentages-of-events): energy, and the Night Owl chance.</summary>
+    private static readonly (double Chance, int Energy, bool NightOwl)[] RestOutcomes =
+        [(0.25, 70, false), (0.625, 50, false), (0.10, 30, false), (0.025, 30, true)];
+
+    /// <summary>The trainee's own outing, same source: karaoke, stroll, and three shrine visits.</summary>
+    private static readonly (double Chance, int Mood, int Energy)[] SoloOutings =
+        [(0.35, 2, 0), (0.30, 1, 10), (0.20, 1, 10), (0.10, 1, 20), (0.05, 1, 30)];
+
     /// <summary>Friend outings: chain events (5 steps) usually add stats or hints; estimated, not measured.</summary>
     private const double OutingChainStepValue = 8, OutingEnergy = 20, OutingBond = 5;
 
@@ -179,10 +193,10 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         double mood = values.Mood(1);
         double raceBonus = ctx.NextGoal is { } goal && goal.Turn - ctx.Turn <= 3 && ctx.Character.Mood < Mood.Normal ? 10 : 0;
 
-        double soloEnergy = values.Energy(10);
-        var solo = new List<string> { $"mood {ctx.Character.Mood} +1 ({mood:+0.0})", $"energy +~10 ({soloEnergy:+0.0})" };
+        double soloValue = SoloOutings.Sum(o => o.Chance * (values.Mood(o.Mood) + values.Energy(o.Energy)));
+        var solo = new List<string> { $"karaoke +2 mood 35%, else +1 mood and +10–30 energy ({soloValue:+0.0})" };
         if (raceBonus > 0) solo.Add($"{ctx.NextGoal!.Name} soon with low mood (+10)");
-        yield return new ScoredOption("Recreation: trainee", mood + soloEnergy + raceBonus, solo);
+        yield return new ScoredOption("Recreation: trainee", soloValue + raceBonus, solo);
 
         foreach (var friend in ctx.Character.Bonds.Where(b => b.OutingUnlocked))
         {

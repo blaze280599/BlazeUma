@@ -14,10 +14,19 @@ public sealed record TurnOutcome(
     IReadOnlyList<int> SkillsLearned);
 
 /// <summary>One line of the career log.</summary>
-/// <param name="Kind">"turn" (advice at the start of a turn and what followed) or "event".</param>
+/// <param name="Kind">"turn" (advice at the start of a turn and what followed), "event" (an event shown), or
+/// "event-result" (what that event actually did, for measuring outcome odds).</param>
 public sealed record LogRecord(
     string Kind, int Turn, DateTimeOffset At, string Summary,
-    IReadOnlyList<ScoredOption> Options, CareerSnapshot Snapshot, TurnOutcome? Outcome, int? StoryId);
+    IReadOnlyList<ScoredOption> Options, CareerSnapshot Snapshot, TurnOutcome? Outcome, int? StoryId,
+    EventResult? Result = null);
+
+/// <summary>
+/// What an event with choices did: the change from its choice screen to the next screen after it, and the
+/// preview outcome that explains it best. <paramref name="Choice"/> and <paramref name="Outcome"/> are null when
+/// two outcomes explain it equally well; <paramref name="MatchError"/> is how far off the best one is (0 = exact).
+/// </summary>
+public sealed record EventResult(int StoryId, int? Choice, int? Outcome, double MatchError, TurnOutcome Change);
 
 /// <summary>
 /// Turns a stream of snapshots into log records: one per completed turn (start-of-turn advice plus the
@@ -28,6 +37,62 @@ public sealed class TurnRecorder
     private CareerSnapshot? _start;
     private Advice? _startAdvice;
     private int? _lastEventStory;
+    private CareerSnapshot? _pendingEvent;
+
+    /// <summary>
+    /// The change across an event, and the preview outcome nearest to it: stat, energy, mood and skill-point
+    /// differences (energy and mood clamped to their range) plus 5 per condition that does not match.
+    /// Random-stat effects (display 14 / 34) cannot be placed and are left out.
+    /// </summary>
+    public static EventResult Resolve(CareerSnapshot atEvent, CareerSnapshot after)
+    {
+        var change = Compare(atEvent, after);
+        var c = atEvent.Character!;
+        int lastStat = atEvent.LastTrainingId is int id ? TurnAdvisor.TrainingStat(id) : 0;
+        var actual = new Dictionary<int, int>
+        {
+            [ParamIds.Speed] = change.StatChanges.GetValueOrDefault("speed"), [ParamIds.Stamina] = change.StatChanges.GetValueOrDefault("stamina"),
+            [ParamIds.Power] = change.StatChanges.GetValueOrDefault("power"), [ParamIds.Guts] = change.StatChanges.GetValueOrDefault("guts"),
+            [ParamIds.Wit] = change.StatChanges.GetValueOrDefault("wit"), [ParamIds.Energy] = change.EnergyAfter - change.EnergyBefore,
+            [ParamIds.Mood] = change.MoodAfter - change.MoodBefore, [ParamIds.SkillPoints] = change.SkillPointChange,
+        };
+
+        double Error(IReadOnlyList<EventEffect> outcome)
+        {
+            var predicted = actual.Keys.ToDictionary(k => k, _ => 0);
+            var gained = new HashSet<int>();
+            var cured = new HashSet<int>();
+            foreach (var e in outcome)
+            {
+                void Add(int param, int amount) { if (predicted.ContainsKey(param)) predicted[param] += amount; }
+                switch (e.DisplayId)
+                {
+                    case 1 or 39: Add(e.Value0, e.Value1); break;
+                    case 2 or 38: Add(e.Value0, -e.Value1); break;
+                    case 13: foreach (int s in new[] { ParamIds.Speed, ParamIds.Stamina, ParamIds.Power, ParamIds.Guts, ParamIds.Wit }) Add(s, e.Value0); break;
+                    case 19: Add(lastStat, e.Value0); break;
+                    case 20: Add(lastStat, -e.Value0); break;
+                    case 9 or 37 or 40: gained.Add(e.Value0); break;
+                    case 10: cured.Add(e.Value0); break;
+                }
+            }
+            predicted[ParamIds.Energy] = Math.Clamp(predicted[ParamIds.Energy], -c.Energy, c.MaxEnergy - c.Energy);
+            predicted[ParamIds.Mood] = Math.Clamp(predicted[ParamIds.Mood], 1 - (int)c.Mood, 5 - (int)c.Mood);
+            double error = actual.Sum(a => Math.Abs(a.Value - predicted[a.Key]));
+            error += 5 * gained.Except(change.ConditionsAdded).Count() + 5 * change.ConditionsAdded.Except(gained).Count();
+            error += 5 * cured.Except(change.ConditionsRemoved).Count();
+            return error;
+        }
+
+        var ranked = (atEvent.EventChoices ?? [])
+            .SelectMany(choice => choice.Outcomes.Select((o, i) => (choice.Choice, Outcome: i + 1, Error: Error(o))))
+            .OrderBy(x => x.Error)
+            .ToList();
+        if (ranked.Count == 0) return new EventResult(atEvent.Story!.StoryId, null, null, double.NaN, change);
+        var best = ranked[0];
+        bool clear = ranked.Count == 1 || ranked[1].Error > best.Error;
+        return new EventResult(atEvent.Story!.StoryId, clear ? best.Choice : null, clear ? best.Outcome : null, best.Error, change);
+    }
 
     /// <summary>Raised state: the snapshot belongs to a different career than the previous ones.</summary>
     public bool NewCareer { get; private set; }
@@ -38,10 +103,20 @@ public sealed class TurnRecorder
         var records = new List<LogRecord>();
         if (snapshot.Turn is not int turn || snapshot.Character is null) return records;
 
-        if (advice.Situation == Situation.Event && snapshot.Story is { } story && story.StoryId != _lastEventStory)
+        bool newEvent = advice.Situation == Situation.Event && snapshot.Story is { } shown && shown.StoryId != _lastEventStory;
+        // An event with choices is resolved by the next screen that is not that event (home, or the next event).
+        if (_pendingEvent is { Story: { } pending } && (advice.Situation != Situation.Event || newEvent))
         {
+            records.Add(new LogRecord("event-result", turn, snapshot.ReadAt, "", [], snapshot, null, pending.StoryId,
+                Resolve(_pendingEvent, snapshot)));
+            _pendingEvent = null;
+        }
+        if (newEvent)
+        {
+            var story = snapshot.Story!;
             _lastEventStory = story.StoryId;
             records.Add(new LogRecord("event", turn, snapshot.ReadAt, advice.Summary, advice.Options, snapshot, null, story.StoryId));
+            if (snapshot.EventChoices is { Count: > 0 }) _pendingEvent = snapshot;
         }
 
         // A turn starts on the home screen (or race day); events and sub-screens in between are not starts.
