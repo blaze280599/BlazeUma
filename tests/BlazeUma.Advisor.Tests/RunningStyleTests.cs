@@ -7,10 +7,11 @@ namespace BlazeUma.Advisor.Tests;
 public class RunningStyleTests
 {
     // Daiwa: Front A, Pace A, Late E, End G.
-    private static CareerContext Context(int style, Aptitudes? aptitudes = null)
+    private static CareerContext Context(int style, Aptitudes? aptitudes = null, RunningStyle? cardStyle = null)
     {
         var daiwa = Snapshots.Daiwa();
-        return new(Snapshots.Snapshot(daiwa with { RunningStyle = style, Aptitudes = aptitudes ?? daiwa.Aptitudes }), new FakeGameData());
+        return new(Snapshots.Snapshot(daiwa with { RunningStyle = style, Aptitudes = aptitudes ?? daiwa.Aptitudes }),
+            new FakeGameData { CardStyle = cardStyle });
     }
 
     [Fact]
@@ -25,6 +26,13 @@ public class RunningStyleTests
         var frontOnly = new Aptitudes(7, 2, 3, 7, 7, 7, 7, 6, 3, 1);   // Kitasan Black: Front A, Pace B
         Assert.Equal(RunningStyle.FrontRunner, Context(0, frontOnly).Style);
         Assert.Equal(RunningStyle.PaceChaser, Context(0).Style);        // Front A = Pace A: ties go to Pace
+    }
+
+    [Fact]
+    public void BestStyle_PrefersTheCardDefault_UnlessOutgraded()
+    {
+        Assert.Equal(RunningStyle.FrontRunner, Context(0, cardStyle: RunningStyle.FrontRunner).Style);   // tie: card wins
+        Assert.Equal(RunningStyle.PaceChaser, Context(0, cardStyle: RunningStyle.LateSurger).Style);     // Late E < Pace A
     }
 
     [Fact]

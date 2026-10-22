@@ -54,6 +54,10 @@ internal sealed class FakeGameData : IGameData
     public SkillInfo? Skill(int skillId) => _skills.GetValueOrDefault(skillId);
     public SkillInfo? SkillForHint(int groupId, int rarity) => _skills.Values.FirstOrDefault(s => s.GroupId == groupId && s.Rarity == rarity);
     public IReadOnlyList<int> BaseSkillIds(int cardId, int talentLevel) => [200282, 200722, 200572];
+
+    /// <summary>card_data.running_style for every card; none by default.</summary>
+    public RunningStyle? CardStyle { get; set; }
+    public RunningStyle? DefaultRunningStyle(int cardId) => CardStyle;
     public SupportCardInfo? SupportCard(int supportCardId) => supportCardId switch
     {
         30145 => new SupportCardInfo(30145, "[Welcome to Umayuru] Tanino Gimlet", 1084, 1, 102),

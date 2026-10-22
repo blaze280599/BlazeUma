@@ -161,6 +161,10 @@ public sealed class MasterDatabase : IGameData, IDisposable
         Query("select skill_id from available_skill_set where available_skill_set_id = $c and need_rank <= $t order by id",
             r => r.GetInt32(0), ("$c", cardId), ("$t", talentLevel));
 
+    public RunningStyle? DefaultRunningStyle(int cardId) =>
+        Query("select running_style from card_data where id = $c", r => r.GetInt32(0), ("$c", cardId))
+            .Where(s => Enum.IsDefined(typeof(RunningStyle), s)).Select(s => (RunningStyle?)s).FirstOrDefault();
+
     public SupportCardInfo? SupportCard(int supportCardId) =>
         Query("select id, chara_id, support_card_type, command_id from support_card_data where id = $id",
             r => new SupportCardInfo(r.GetInt32(0), Text(TextSupportCard, r.GetInt32(0)) ?? $"card {r.GetInt32(0)}",

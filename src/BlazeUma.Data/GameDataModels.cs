@@ -116,6 +116,8 @@ public interface IGameData
     SkillInfo? SkillForHint(int groupId, int rarity);
     /// <summary>Skills the trainee can learn without hints (available_skill_set, gated by awakening level).</summary>
     IReadOnlyList<int> BaseSkillIds(int cardId, int talentLevel);
+    /// <summary>The style a trainee card starts a career with (card_data.running_style); null when unknown.</summary>
+    RunningStyle? DefaultRunningStyle(int cardId) => null;
     SupportCardInfo? SupportCard(int supportCardId);
     /// <summary>
     /// Effects at the card's level: from its total <paramref name="exp"/> (support_card_level), capped by the

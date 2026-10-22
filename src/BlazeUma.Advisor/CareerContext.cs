@@ -22,13 +22,16 @@ public sealed class CareerContext
     /// <summary>The career is over (its last screen was shown), possibly before the final turn after a lost goal.</summary>
     public bool CareerOver { get; }
     public int TurnsLeft => CareerOver ? 0 : Math.Max(0, FinalTurn - Turn);
-    /// <summary>The style the career has set, or the trainee's best-graded one when none is read.</summary>
+    /// <summary>The style the career has set, or the one the game would pick (<see cref="BestStyle"/>) when none is read.</summary>
     public RunningStyle Style => Enum.IsDefined(typeof(RunningStyle), Character.RunningStyle) ? (RunningStyle)Character.RunningStyle : BestStyle;
 
-    /// <summary>Highest-graded running style; ties go to Pace, then Front, Late, End.</summary>
+    /// <summary>
+    /// The style the game defaults to: the card's own (card_data.running_style) unless another is graded higher,
+    /// else the highest-graded one with ties going to Pace, then Front, Late, End.
+    /// </summary>
     public RunningStyle BestStyle =>
-        new[] { RunningStyle.PaceChaser, RunningStyle.FrontRunner, RunningStyle.LateSurger, RunningStyle.EndCloser }
-            .MaxBy(Aptitude);
+        new[] { Data.DefaultRunningStyle(Character.CardId), RunningStyle.PaceChaser, RunningStyle.FrontRunner, RunningStyle.LateSurger, RunningStyle.EndCloser }
+            .OfType<RunningStyle>().MaxBy(Aptitude);
 
     /// <summary>Share of remaining goal races per distance category (the scenario finals use the trainee's best goal distance).</summary>
     public IReadOnlyDictionary<DistanceCategory, double> DistanceProfile { get; }
