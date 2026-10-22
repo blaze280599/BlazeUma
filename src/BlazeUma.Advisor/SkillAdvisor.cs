@@ -166,7 +166,7 @@ public sealed class SkillAdvisor(CareerContext ctx)
     /// </summary>
     public (IReadOnlyList<Candidate> Buy, string Reason) Plan(IReadOnlyList<Candidate> candidates, int skillPoints)
     {
-        bool goalSoon = ctx.NextGoal is { } g && g.Turn - ctx.Turn <= 1;
+        bool goalSoon = !ctx.CareerOver && ctx.NextGoal is { } g && g.Turn - ctx.Turn <= 1;
         bool ending = ctx.TurnsLeft <= 1;
         if (!goalSoon && !ending)
             return ([], "save points until the turn before a goal race (hints make skills cheaper)");

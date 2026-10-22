@@ -1,6 +1,7 @@
 namespace BlazeUma.Advisor;
 
-public enum Situation { NoCareer, TrainingTurn, GoalRaceDay, Event, SkillShop, RaceList }
+/// <summary><see cref="CareerEnd"/>: the career's last screen (Skills / Complete Career), after the finale or a lost goal.</summary>
+public enum Situation { NoCareer, TrainingTurn, GoalRaceDay, Event, SkillShop, RaceList, CareerEnd }
 
 /// <summary>One candidate action with its score and the reasons behind it. Higher is better.</summary>
 public sealed record ScoredOption(string Label, double Score, IReadOnlyList<string> Reasons)

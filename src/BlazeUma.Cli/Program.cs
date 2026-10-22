@@ -20,7 +20,7 @@ try
         {
             Mode.Advisor => AdvisorMode.Run(),
             Mode.AutoBot => bot.Run(),
-            _ => MainMenu(),
+            _ => MainMenu(bot.LastCareer),
         };
     }
     Console.Clear();
@@ -36,9 +36,15 @@ catch (Exception e)
     return 1;
 }
 
-static Mode MainMenu()
+static Mode MainMenu(CompletedCareer? last)
 {
     ConsoleUi.Banner("Main menu");
+    if (last is not null)
+    {
+        Console.WriteLine("  " + ConsoleUi.Accent("Career completed"));
+        foreach (string line in last.Describe().Split('\n')) Console.WriteLine("  " + line);
+        Console.WriteLine();
+    }
     Console.WriteLine("  Welcome! Start a career in the game, then choose how BlazeUma should help.");
     Console.WriteLine();
     int choice = ConsoleUi.Choose("What would you like to do?",

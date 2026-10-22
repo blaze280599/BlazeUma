@@ -52,6 +52,28 @@ internal static class ActionPlanner
     private const string LearnConfirmTitle = "Confirmation";
     public const string SkillsLearnedTitle = "Skills Learned";
 
+    public const string FinalSkills = "Spend the last skill points", CompleteCareer = "Complete Career";
+
+    /// <summary>
+    /// On the last screen: Skills opens the usual skill screen (its Back returns here), where the advisor buys
+    /// everything useful as the career is ending. Complete Career opens a popup of the same title ("Finish this
+    /// Career playthrough?", unused skill points are lost): Cancel left, Finish right (turn 74).
+    /// </summary>
+    public static ActionPlan CompleteScreenPlan(string action)
+    {
+        if (action == FinalSkills) return new(action, [Home("Tap Skills", "View.Parameter._learnSkillButton", WaitFor.SkillScreen)]);
+        var done = Home("Tap Complete Career", "View.Parameter._doneButton", WaitFor.Dialog);
+        return new(action,
+        [
+            // The finish button stays readable behind the popup, so skip the tap if the popup is already up.
+            done with { Resolve = g => DialogTitle(g.ManagedReader) == CompleteCareer ? StepTarget.Skip("the popup is already open") : done.Resolve(g) },
+            new PlanStep("Confirm: Finish", g =>
+                DialogTitle(g.ManagedReader) != CompleteCareer ? StepTarget.Fail($"expected the \"{CompleteCareer}\" popup, found \"{DialogTitle(g.ManagedReader)}\"")
+                : DialogButton(g, "_rightButton") is { } finish ? new StepTarget(finish.Address, finish.Path)
+                : StepTarget.Fail($"\"{CompleteCareer}\" has no Finish button"), WaitFor.DialogClosed),
+        ]);
+    }
+
     /// <summary>Tap the home screen's Skills button (race day shows its own copy beside Race!).</summary>
     public static ActionPlan SkillScreenOpen(bool raceDay) =>
         new(OpenSkills, [Home("Tap Skills", raceDay ? "_targetRaceSkillGetButton" : "_skillGetButton", WaitFor.SkillScreen)]);

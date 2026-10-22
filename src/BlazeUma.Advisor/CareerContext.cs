@@ -19,7 +19,9 @@ public sealed class CareerContext
     public IReadOnlyList<GoalRace> RemainingGoals { get; }
     public GoalRace? NextGoal => RemainingGoals.FirstOrDefault();
     public GoalRace? GoalToday => NextGoal is { } g && g.Turn == Turn ? g : null;
-    public int TurnsLeft => Math.Max(0, FinalTurn - Turn);
+    /// <summary>The career is over (its last screen was shown), possibly before the final turn after a lost goal.</summary>
+    public bool CareerOver { get; }
+    public int TurnsLeft => CareerOver ? 0 : Math.Max(0, FinalTurn - Turn);
     public RunningStyle Style => Enum.IsDefined(typeof(RunningStyle), Character.RunningStyle) ? (RunningStyle)Character.RunningStyle : RunningStyle.PaceChaser;
 
     /// <summary>Share of remaining goal races per distance category (the scenario finals use the trainee's best goal distance).</summary>
@@ -28,9 +30,10 @@ public sealed class CareerContext
     /// <summary>Longest goal distance still ahead, in meters.</summary>
     public int LongestRemainingDistance { get; }
 
-    public CareerContext(CareerSnapshot snapshot, IGameData data)
+    public CareerContext(CareerSnapshot snapshot, IGameData data, bool careerOver = false)
     {
         Snapshot = snapshot;
+        CareerOver = careerOver;
         Character = snapshot.Character ?? throw new ArgumentException("Snapshot has no character.", nameof(snapshot));
         Turn = snapshot.Turn ?? throw new ArgumentException("Snapshot has no turn.", nameof(snapshot));
         Data = data;

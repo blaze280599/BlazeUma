@@ -31,7 +31,7 @@ internal sealed class AutoBot(BotControl control)
     /// <summary>Pause before every tap, so menus and popups finish animating (tuned by eye on the live game).</summary>
     private static readonly TimeSpan StepGap = TimeSpan.FromSeconds(1);
 
-    private enum Outcome { Done, Interrupted, NeedsYou }
+    private enum Outcome { Done, Interrupted, NeedsYou, CareerCompleted }
 
     private Stopwatch? _idle;
     private int _turn, _actionsThisTurn;
@@ -42,8 +42,14 @@ internal sealed class AutoBot(BotControl control)
     private int _spentTurn = -1;
     /// <summary>The turn the skill screen was last opened for, so it is opened at most once a turn.</summary>
     private int _skillsTurn = -1;
+    /// <summary>The skill screen was opened from the career's last screen; next time there, complete the career.</summary>
+    private bool _finalSkillsOpened;
     /// <summary>The same career log as Advisor mode (turns, events and what each event did), next to the exe.</summary>
     private CareerLog? _log;
+
+    /// <summary>The last career this bot completed, for the main menu; null until one is.</summary>
+    public CompletedCareer? LastCareer { get; private set; }
+    private bool _completed;
 
     public Mode Run()
     {
@@ -59,6 +65,13 @@ internal sealed class AutoBot(BotControl control)
                 data = MasterDatabase.Open(MasterDatabase.PathInGameDirectory(reader.GameDirectory));
                 Console.WriteLine("  " + ConsoleUi.Dim(ButtonTapper.EnsureAgent(reader.ProcessId)));
                 string? reason = Play(reader, data);
+                if (_completed)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("  " + ConsoleUi.Accent("Career completed!") + ConsoleUi.Dim("  Back to the main menu…"));
+                    Thread.Sleep(TimeSpan.FromSeconds(2));
+                    return Mode.Menu;
+                }
                 return AfterStop(reason);
             }
             catch (Exception e) when (IsConnectionProblem(e))
@@ -105,6 +118,8 @@ internal sealed class AutoBot(BotControl control)
         _turn = -1;
         _spentTurn = -1;
         _skillsTurn = -1;
+        _finalSkillsOpened = false;
+        _completed = false;
         _actionsThisTurn = 0;
         int failures = 0;
         _log = CareerLog.Create();
@@ -145,6 +160,7 @@ internal sealed class AutoBot(BotControl control)
                     (outcome, problem) = (Outcome.NeedsYou, e.Message);
                 }
 
+                if (outcome == Outcome.CareerCompleted) { _completed = true; return null; }
                 if (outcome == Outcome.NeedsYou && !Pause("The auto bot needs you", problem)) return null;
             }
         }
@@ -182,6 +198,9 @@ internal sealed class AutoBot(BotControl control)
             RaceRunner.InProgress(reader.ManagedReader) ? ActionPlanner.GoalRace   // left mid-race (pause, by hand)
             : advice.Situation == Situation.Event ? advice.Best?.Label
             : advice.Situation == Situation.SkillShop ? ActionPlanner.LearnSkills
+            // The last screen: spend the skill points once (the skill screen's Back returns here), then finish.
+            : advice.Situation == Situation.CareerEnd
+                ? (_finalSkillsOpened || ActionPlanner.DialogTitle(reader.ManagedReader) == ActionPlanner.CompleteCareer ? ActionPlanner.CompleteCareer : ActionPlanner.FinalSkills)
             : turn == _spentTurn ? null                                             // the game is still finishing this turn
             // The advisor buys skills on the turn before a goal race (and on race day): learn them before acting.
             : advice.Situation is Situation.TrainingTurn or Situation.GoalRaceDay && turn != _skillsTurn
@@ -215,7 +234,10 @@ internal sealed class AutoBot(BotControl control)
 
         var bonds = snapshot.Character?.Bonds ?? [];
         if (action == ActionPlanner.OpenSkills) _skillsTurn = turn;
+        // The last turn's race already spent some of the per-turn actions; the end screens get their own.
+        if (action == ActionPlanner.FinalSkills) { _finalSkillsOpened = true; _actionsThisTurn = 1; }
         var plan = action == ActionPlanner.OpenSkills ? ActionPlanner.SkillScreenOpen(advice.Situation == Situation.GoalRaceDay)
+            : action is ActionPlanner.FinalSkills or ActionPlanner.CompleteCareer ? ActionPlanner.CompleteScreenPlan(action)
             : action == ActionPlanner.LearnSkills ? ActionPlanner.SkillShop(advice.SkillsToBuy ?? [], id => data.Skill(id)?.Name ?? $"skill {id}")
             : ActionPlanner.For(action,
                 slot => bonds.FirstOrDefault(b => b.TargetId == slot) is { } bond ? data.CharacterName(bond.CharaId) : null,
@@ -233,6 +255,12 @@ internal sealed class AutoBot(BotControl control)
         // A turn action whose own tap went through and then led to an event (Happy Meek's challenge, a card
         // event…) has used the turn. An event that pops up before that tap (turn 40's camp event) has not.
         if (result == Outcome.Done && actionTapped && !plan.IsEvent && TurnNow(reader) == turn && EventShowing(reader)) _spentTurn = turn;
+        // Finish tapped on "Complete Career": the career is over; the stats were read just before.
+        if (result == Outcome.Done && actionTapped && action == ActionPlanner.CompleteCareer)
+        {
+            LastCareer = CompletedCareer.From(snapshot, data);
+            return (Outcome.CareerCompleted, null);
+        }
         if (result == Outcome.Done) Thread.Sleep(Settle);
         return (result, problem);
     }
@@ -321,11 +349,16 @@ internal sealed class AutoBot(BotControl control)
             }
         }
 
+        // Finish ends the career; the results screens after it are not the bot's to answer.
+        if (plan.Action == ActionPlanner.CompleteCareer && actionTapped) return Outcome.Done;
         // Popups that follow an action (the Rest confirmation, …) have a real choice: the user picks.
         while (TurnNow(reader) <= startTurn && !EventShowing(reader))
         {
             var dialog = DialogButtons(r);
             if (dialog.Count == 0) break;
+            // Only offer what is showing: a two-button popup still reports its hidden Center button.
+            dialog = dialog.Where(b => tapper.IsActive(b.Address) == true).ToList();
+            if (dialog.Count == 0) dialog = DialogButtons(r);
             var pick = AskDialog(r, dialog);
             if (pick is null) { problem = "A popup is open in the game; answer it by hand, then resume."; return Outcome.NeedsYou; }
             string reply = tapper.Tap(pick.Address);

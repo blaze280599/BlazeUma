@@ -11,6 +11,13 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
 {
     private const string SkillScreen = "Gallop.SingleModeSkillLearningViewController";
     private const string RaceScreen = "Gallop.SingleModeRaceEntryViewController";
+    private const string CompleteScreen = "Gallop.SingleModeConfirmCompleteViewController";
+
+    /// <summary>
+    /// The turn the career's last screen was seen on. The turn stays put after it, so the skill screen opened
+    /// from there (same turn) is known to be the career's last chance to spend skill points.
+    /// </summary>
+    private int? _endTurn;
 
     public Advice Advise(CareerSnapshot snapshot)
     {
@@ -19,7 +26,8 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
             return new Advice(Situation.NoCareer, "Umamusume is open, not in a career",
                 "Start or resume a career to get advice", [], warnings, []);
 
-        var ctx = new CareerContext(snapshot, data);
+        if (snapshot.Screen?.ViewController == CompleteScreen) _endTurn = snapshot.Turn;
+        var ctx = new CareerContext(snapshot, data, careerOver: _endTurn == snapshot.Turn);
         var values = new ValueModel(ctx);
         var c = ctx.Character;
         string header = $"Turn {ctx.Turn} · {ctx.Date} · Mood {c.Mood} · Energy {c.Energy}/{c.MaxEnergy} · SP {c.SkillPoints} · Fans {c.Fans}";
@@ -31,11 +39,11 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
         };
         if (values.Targets.StaminaNote is { } staminaNote) notes.Add(new Note("Recovery", staminaNote));
         if (values.EnergyOutlook.Reason is { } energyNote) notes.Add(new Note("Energy", energyNote));
-        if (ctx.NextGoal is { } next)
+        if (!ctx.CareerOver && ctx.NextGoal is { } next)
             notes.Add(new Note("Next goal", $"{next.Name} on turn {next.Turn}" +
                 (next.Turn > ctx.Turn ? $" (in {next.Turn - ctx.Turn})" : " (today)") +
                 (next.RequiredPlace > 0 ? $", need top {next.RequiredPlace}" : "")));
-        if (ctx.FanShortfall() is var (fanGoal, shortfall))
+        if (!ctx.CareerOver && ctx.FanShortfall() is var (fanGoal, shortfall))
         {
             int fromGoals = ctx.ExpectedGoalFansBefore(fanGoal.Turn);
             notes.Add(fromGoals >= shortfall
@@ -67,11 +75,14 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
         var skills = new SkillAdvisor(ctx);
         var (buy, why) = skills.Plan(skills.Predicted(), c.SkillPoints);
         notes.Add(buy.Count > 0
-            ? new Note("Skills", $"buy {string.Join(", ", buy.Select(b => $"{b.Skill.Name} ({b.Price})"))} before racing ({why})")
+            ? new Note("Skills", $"buy {string.Join(", ", buy.Select(b => $"{b.Skill.Name} ({b.Price})"))} {(ctx.CareerOver ? "before completing the career" : "before racing")} ({why})")
             : new Note("Skills", why));
         var toBuy = buy.Select(b => b.Skill.Id).ToList();
         // Skills are bought before the turn's action (the auto bot does the same), so lead with them.
         string First(string then) => buy.Count > 0 ? $"Buy {string.Join(", ", buy.Select(b => b.Skill.Name))} first, then {char.ToLowerInvariant(then[0])}{then[1..]}" : then;
+
+        if (snapshot.Screen?.ViewController == CompleteScreen)
+            return new Advice(Situation.CareerEnd, header, First("Complete the career"), [], notes, details, toBuy);
 
         if (ctx.GoalToday is { } goal)
             return new Advice(Situation.GoalRaceDay, header,
