@@ -206,6 +206,42 @@ Work through these in order, one at a time. Each item says how we know it is don
 9. [ ] **Supervised mode**: the bot performs the pick after you press a key; stops on anything unexpected.
 10. [ ] **Auto mode**: full career loop from turn 1 to the results screen, with a stop hotkey.
 
+## Advisor improvements (planned 2026-10-22)
+
+One session and one commit per item. Waves run in order; items in the same wave touch different files and
+can run side by side. From wave 2 on, every change is checked with the replay harness (A1) and the commit
+message says which logged picks it changed. The logs are thin so far (~24 records in `logs/` and
+`publish/logs/`), so the harness is a sanity check that gets better as more careers are logged.
+
+**Wave 1**
+- A1. [ ] **Replay harness**: `BlazeUma.Cli replay <log.jsonl|dir> [--baseline <git-ref>]` re-runs `CareerAdvisor`
+  on logged snapshots and prints each record's logged pick next to the current pick, flagging flips; plus a
+  test that replays a small fixture log. *Done when:* running it on today's logs prints a flip report.
+- A2. [ ] **Measurement script**: `research/scripts/measure_logs.py` pulls outing / rest energy, race SP and
+  stats per grade, Happy Meek duel results and event outcomes from the logs, with sample counts.
+  *Done when:* it prints a table per estimate that names the constant in the code it should replace.
+
+**Wave 2**
+- A3. [ ] **Achievable stat targets** (`ValueModel`): split a projected stat budget (turns left × average gain)
+  by priority, not cap-based Speed; Power/Guts/Wit targets depend on distance and style.
+- A4. [ ] **Event odds from logs** (`EventAdvisor`): an odds table built from `event-result` records, used when
+  there are enough samples; equal weights otherwise.
+
+**Wave 3**
+- A5. [ ] **Recovery skills lower the Stamina target** (`SkillAdvisor`, `ValueModel`).
+- A6. [ ] **Back-to-back race penalty** (`RaceEvaluator`): count the run of races in a row; 3+ risks stats and
+  bad conditions.
+
+**Wave 4**
+- A7. [ ] **Short lookahead** (`TurnAdvisor`, `ValueModel`): facility-level progress, and energy valued
+  against the coming turns (goal races, summer camp, partners lined up).
+- A8. [ ] **Place chance from stats** (`RaceEvaluator`): compare stats with a typical field for the grade and
+  year; race rewards from A2's measurements.
+
+**Wave 5** (one after the other: both touch `TurnAdvisor`)
+- A9. [ ] **Per-condition costs** (Infirmary, Rest & Recreation, event effects).
+- A10. [ ] **Hint value from the card's real hint skills** (fit × rating × discount).
+
 ## Later
 
 11. [ ] **Event odds table**: more measured odds beyond Get Well Soon! / Don't Overdo It!
