@@ -29,10 +29,16 @@ public sealed record TurnDate(int Turn, int Year, int Month, int Half)
         $"{(Year switch { 1 => "Junior", 2 => "Classic", 3 => "Senior", _ => "Finale" })} {(Half == 1 ? "Early" : "Late")} {new DateTime(2000, Math.Clamp(Month, 1, 12), 1):MMM}";
 }
 
-/// <summary>A single_mode_program row joined with its race and course.</summary>
+/// <summary>
+/// Where and when a race is run: race_course_set.race_track_id and turn (1 right-handed, 2 left-handed, 4 straight),
+/// race_instance.date (MMDD) and time (2 day, 3 evening, 4 night), and race.is_dirtgrade.
+/// </summary>
+public sealed record RaceCourse(int TrackId, int Rotation, int Date, int Time, bool DirtGrade);
+
+/// <summary>A single_mode_program row joined with its race and course. Course is null when unknown.</summary>
 public sealed record RaceProgram(
     int ProgramId, int RaceInstanceId, string Name, int Grade, int Distance, Ground Ground,
-    int Month, int Half, int Permission, int NeedFans, int FirstPlaceFans)
+    int Month, int Half, int Permission, int NeedFans, int FirstPlaceFans, RaceCourse? Course = null)
 {
     public DistanceCategory Category => Distances.Categorize(Distance);
 

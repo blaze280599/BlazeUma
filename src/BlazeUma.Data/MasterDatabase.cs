@@ -84,7 +84,8 @@ public sealed class MasterDatabase : IGameData, IDisposable
     private const string ProgramSelect = """
         select p.id, p.race_instance_id, coalesce(t.text, ''), r.grade, cs.distance, cs.ground,
                p.month, p.half, p.race_permission, p.need_fan_count,
-               coalesce((select fan_count from single_mode_fan_count f where f.fan_set_id = p.fan_set_id and f."order" = 1), 0)
+               coalesce((select fan_count from single_mode_fan_count f where f.fan_set_id = p.fan_set_id and f."order" = 1), 0),
+               cs.race_track_id, cs.turn, ri.date, ri.time, r.is_dirtgrade
         from single_mode_program p
         join race_instance ri on ri.id = p.race_instance_id
         join race r on r.id = ri.race_id
@@ -94,7 +95,8 @@ public sealed class MasterDatabase : IGameData, IDisposable
 
     private static RaceProgram MapProgram(SqliteDataReader r) => new(
         r.GetInt32(0), r.GetInt32(1), r.GetString(2).Replace("\\n", " "), r.GetInt32(3), r.GetInt32(4), (Ground)r.GetInt32(5),
-        r.GetInt32(6), r.GetInt32(7), r.GetInt32(8), r.GetInt32(9), r.GetInt32(10));
+        r.GetInt32(6), r.GetInt32(7), r.GetInt32(8), r.GetInt32(9), r.GetInt32(10),
+        new RaceCourse(r.GetInt32(11), r.GetInt32(12), r.GetInt32(13), r.GetInt32(14), r.GetInt32(15) != 0));
 
     public RaceProgram? Program(int programId)
     {

@@ -3,14 +3,14 @@ using BlazeUma.Memory.Game;
 
 namespace BlazeUma.Advisor.Tests;
 
-/// <summary>Small in-memory game data: Daiwa Scarlet's first goals and a few skills and races.</summary>
+/// <summary>Small in-memory game data: Daiwa Scarlet's first goals and a few skills and races (goal courses as in master.mdb).</summary>
 internal sealed class FakeGameData : IGameData
 {
-    public static readonly RaceProgram Debut = new(1067, 904183, "Junior Make Debut", 900, 2000, Ground.Turf, 6, 2, 1, 0, 700);
-    public static readonly RaceProgram TulipSho = new(185, 0, "Tulip Sho", 200, 1600, Ground.Turf, 3, 1, 2, 1750, 6000);
-    public static readonly RaceProgram ShukaSho = new(167, 0, "Shuka Sho", 100, 2000, Ground.Turf, 10, 2, 2, 7500, 20000);
-    public static readonly RaceProgram TennoShoAutumn = new(76, 0, "Tenno Sho (Autumn)", 100, 2000, Ground.Turf, 10, 2, 3, 20000, 25000);
-    public static readonly RaceProgram ArimaKinen = new(81, 0, "Arima Kinen", 100, 2500, Ground.Turf, 12, 2, 3, 25000, 30000);
+    public static readonly RaceProgram Debut = new(1067, 904183, "Junior Make Debut", 900, 2000, Ground.Turf, 6, 2, 1, 0, 700, new RaceCourse(10008, 1, 630, 2, false));
+    public static readonly RaceProgram TulipSho = new(185, 0, "Tulip Sho", 200, 1600, Ground.Turf, 3, 1, 2, 1750, 6000, new RaceCourse(10009, 1, 304, 2, false));
+    public static readonly RaceProgram ShukaSho = new(167, 0, "Shuka Sho", 100, 2000, Ground.Turf, 10, 2, 2, 7500, 20000, new RaceCourse(10008, 1, 1013, 2, false));
+    public static readonly RaceProgram TennoShoAutumn = new(76, 0, "Tenno Sho (Autumn)", 100, 2000, Ground.Turf, 10, 2, 3, 20000, 25000, new RaceCourse(10006, 2, 1029, 2, false));
+    public static readonly RaceProgram ArimaKinen = new(81, 0, "Arima Kinen", 100, 2500, Ground.Turf, 12, 2, 3, 25000, 30000, new RaceCourse(10005, 1, 1222, 2, false));
     public static readonly RaceProgram Hakodate = new(628, 0, "Hakodate Junior Stakes", 300, 1200, Ground.Turf, 7, 2, 1, 350, 3100);
     public static readonly RaceProgram Niigata = new(629, 0, "Niigata Junior Stakes", 300, 1600, Ground.Turf, 8, 2, 1, 350, 3100);
 

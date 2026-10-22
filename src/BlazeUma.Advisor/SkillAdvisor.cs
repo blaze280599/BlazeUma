@@ -133,14 +133,39 @@ public sealed class SkillAdvisor(CareerContext ctx)
 
     /// <summary>
     /// 0..1 fit from the skill's activation condition. Alternatives separated by '@' take the best branch;
-    /// clauses separated by '&amp;' multiply.
+    /// clauses separated by '&amp;' multiply. A condition on the race itself (<see cref="RaceClauses"/>) is the
+    /// mean of its fit over the remaining goal races, so "Kyoto Racecourse" counts by the goals run at Kyoto.
     /// </summary>
-    public double Fit(string condition) => Fit(condition, race: null);
+    public double Fit(string condition) =>
+        ctx.RemainingGoals.Count > 0 && condition.Split('@', '&').Any(c => RaceClauses.Contains(ClauseName(c.Trim())))
+            ? ctx.RemainingGoals.Average(g => Fit(condition, g.Race))
+            : Fit(condition, race: null);
+
+    /// <summary>
+    /// Clauses on the race's course, date or weather. Corner, straight and phase clauses aren't among them: every
+    /// race has those parts, so they stay at 1.
+    /// </summary>
+    private static readonly HashSet<string> RaceClauses =
+        ["track_id", "rotation", "season", "weather", "ground_condition", "is_basis_distance", "time", "grade", "is_dirtgrade"];
+
+    /// <summary>Race clauses whose values exclude each other, with fits that are odds (see <see cref="Fit(string, RaceProgram?)"/>).</summary>
+    private static readonly HashSet<string> Exclusive = ["season", "weather", "ground_condition", "track_id", "rotation"];
+
+    /// <summary>Fit of a track_id clause in a race whose course is unknown (the scenario finals): about one track in ten.</summary>
+    public const double UnknownTrackFit = 0.1;
+
+    private static string ClauseName(string clause) => new([.. clause.TakeWhile(c => char.IsLetterOrDigit(c) || c == '_')]);
 
     /// <summary>Fit for one specific race: distance and surface clauses must match that race exactly.</summary>
     public double Fit(string condition, RaceProgram? race)
     {
         if (string.IsNullOrWhiteSpace(condition)) return 1;
+        // "ground_condition==2@ground_condition==3@ground_condition==4" (Wet Conditions): one race can't be both, so
+        // the branches' odds add up rather than the best one counting.
+        var branches = condition.Split('@').Select(b => b.Trim()).ToList();
+        if (branches.Count > 1 && !branches.Any(b => b.Contains('&')) && branches.Select(ClauseName).Distinct().Count() == 1
+            && Exclusive.Contains(ClauseName(branches[0])))
+            return Math.Min(1, branches.Sum(b => ClauseFit(b, race)));
         return condition.Split('@').Max(branch => branch.Split('&').Aggregate(1.0, (fit, clause) => fit * ClauseFit(clause.Trim(), race)));
     }
 
@@ -150,7 +175,7 @@ public sealed class SkillAdvisor(CareerContext ctx)
 
     private double ClauseFit(string clause, RaceProgram? race)
     {
-        string name = new([.. clause.TakeWhile(c => char.IsLetterOrDigit(c) || c == '_')]);
+        string name = ClauseName(clause);
         if (name.StartsWith("activate_count"))
         {
             // Triggers only after N other skills activate; a trainee with few skills rarely gets there.
@@ -161,8 +186,20 @@ public sealed class SkillAdvisor(CareerContext ctx)
 
         var parts = clause.Split("==");
         if (parts.Length != 2 || !int.TryParse(parts[1], out int value)) return 1;
+        // Without a race (or its course), these are the odds for a race nobody knows yet.
+        var course = race?.Course;
+        static double Is(bool match) => match ? 1 : 0;
         return parts[0] switch
         {
+            "track_id" => course is null ? UnknownTrackFit : Is(course.TrackId == value),
+            "rotation" => course is null ? 0.5 : Is(course.Rotation == value),
+            "time" => course is null ? Is(value == 2) : Is(course.Time == value),   // nearly all races are day races
+            "is_dirtgrade" => course is null ? Is(value == 0) : Is(course.DirtGrade == (value == 1)),
+            "is_basis_distance" => race is null ? 0.5 : Is((race.Distance % 400 == 0) == (value == 1)),
+            "grade" => race is null ? 0.5 : Is(race.Grade == value),
+            "season" => RaceConditions.SeasonShare(course?.Date, value),
+            "weather" => RaceConditions.WeatherShare(course?.Date, value),
+            "ground_condition" => RaceConditions.GroundShare(course?.Date, value),
             "distance_type" when race is not null => (int)race.Category == value ? 1 : 0,
             "distance_type" => ctx.DistanceProfile.GetValueOrDefault((DistanceCategory)value),
             "running_style" => value == (int)ctx.Style ? 1 : 0,
