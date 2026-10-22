@@ -221,7 +221,7 @@ public class TrainingPartnerTests
         var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(), commands: [Snapshots.Train(TrainingIds.Speed, 0, -20, ("speed", 10))]),
             new FakeGameData());
         Assert.Equal(new ValueModel(ctx).BondTrainingValue(20, TrainingIds.Power, new SupportCardEffects(30, 20, 0)), card, 3);
-        Assert.Equal(ValueModel.BondValuePerPartner * (1 - 14 / 48.0) * 0.5, npc, 3);
+        Assert.Equal(ValueModel.BondValuePerPartner * (1 - 14 / 48.0) * 0.5, npc, 1e-9);
     }
 
     [Fact]
@@ -275,9 +275,10 @@ public class ValueModelTests
     {
         var model = Model(stats: new Stats(1404, 600, 700, 300, 700));
         Assert.Equal(0, model.Weight(ParamIds.Speed));
-        // Arima Kinen 2500 m at capped Speed drives the target: a pace chaser needs ~1100+ (checked in Umalator).
-        // The projected budget (~4900) covers it, so the race requirement, not Stamina's share, sets the target.
-        Assert.InRange(model.Targets.Target.Stamina, 1100, 1404);
+        // Arima Kinen 2500 m at capped Speed drives the target: a pace chaser needs ~1000–1400 for a full spurt (checked
+        // in Umalator), and the target asks for StaminaNeedShare of it. The projected budget (~4900) covers that, so
+        // the race requirement, not Stamina's share, sets the target.
+        Assert.InRange(model.Targets.Target.Stamina, (int)(1000 * ValueModel.StaminaNeedShare), (int)(1404 * ValueModel.StaminaNeedShare));
     }
 }
 

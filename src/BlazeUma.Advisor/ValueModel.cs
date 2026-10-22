@@ -220,14 +220,16 @@ public sealed class ValueModel
     /// Shares of the projected total besides Stamina, per goal distance (uma.guide stats page: Stamina ≈ Speed to
     /// the cap, then Power ~800–1000 ≈ Wit, Guts last). Power is acceleration and position fighting, which decide
     /// short races with short spurts, so sprint and mile take more of it; Guts lowers late-race HP use and wins
-    /// long duels, so long routes take a little more. Wit covers the rest. Stamina gets Speed's share.
+    /// long duels, so long routes take a little more. Wit covers the rest: only its racing role, since what it does
+    /// for skills is <see cref="SkillWitValue"/> (0.04 moved from Wit to Power when that was added; Power ended
+    /// career 106802 at 524). Stamina gets <see cref="StaminaShareOfSpeed"/> of Speed's share.
     /// </summary>
     private static (double Speed, double Power, double Guts, double Wit) DistanceShares(DistanceCategory d) => d switch
     {
-        DistanceCategory.Sprint => (0.42, 0.30, 0.08, 0.20),
-        DistanceCategory.Mile => (0.42, 0.28, 0.10, 0.20),
-        DistanceCategory.Long => (0.42, 0.22, 0.15, 0.21),
-        _ => (0.42, 0.25, 0.11, 0.22),
+        DistanceCategory.Sprint => (0.42, 0.34, 0.08, 0.16),
+        DistanceCategory.Mile => (0.42, 0.32, 0.10, 0.16),
+        DistanceCategory.Long => (0.42, 0.26, 0.15, 0.17),
+        _ => (0.42, 0.29, 0.11, 0.18),
     };
 
     /// <summary>
@@ -249,7 +251,7 @@ public sealed class ValueModel
             s[ParamIds.Power] += 0.03;
             s[ParamIds.Wit] -= 0.03;
         }
-        s[ParamIds.Stamina] = s[ParamIds.Speed];
+        s[ParamIds.Stamina] = s[ParamIds.Speed] * StaminaShareOfSpeed;
         return s;
     }
 
@@ -288,10 +290,26 @@ public sealed class ValueModel
     }
 
     /// <summary>
+    /// Stamina's share of the stat budget against Speed's. uma.guide has Stamina ≈ Speed; the logged wins at
+    /// 2000–2500 m ran it at 0.6–0.7 of Speed (Japan Cup 584/820, Takarazuka Kinen 458/761, Tenno Sho (Autumn)
+    /// 546/817), and Stamina at Speed's share left Power ~16% of the budget (500 at the end of career 106802).
+    /// </summary>
+    public const double StaminaShareOfSpeed = 0.75;
+
+    /// <summary>
+    /// Share of a full last spurt's Stamina (<see cref="RaceStamina.Required"/>) the target asks for. In the logged
+    /// careers every goal or G1 race run at most 40% short of a full spurt was won (Takarazuka Kinen, Japan Cup,
+    /// Arima Kinen…); 57–80% short went anywhere from 1st to 8th (Oaks, Kikuka Sho, Queen Elizabeth II Cup). Asking
+    /// for a full spurt (~1,600 for 3,000 m) kept Stamina urgent all career and starved Power (career 106802).
+    /// </summary>
+    public const double StaminaNeedShare = 0.65;
+
+    /// <summary>
     /// Targets follow uma.guide's stat priority for the 1400-cap URA (July patch), scaled to what this career can
     /// reach (<see cref="ProjectedStatTotal"/>) and split by <see cref="Shares"/>, each stat at most its cap:
-    /// Stamina as much as Speed up to a full last spurt in every remaining goal race, Power ~ Wit, Guts last. The
-    /// stamina requirement depends on the split's Speed and Guts, so the split is run three times.
+    /// Stamina as much as Speed up to <see cref="StaminaNeedShare"/> of a full last spurt in every remaining goal
+    /// race, Power ~ Wit, Guts last. The stamina requirement depends on the split's Speed and Guts, so the split is
+    /// run three times.
     /// </summary>
     private static StatTargets PlanTargets(CareerContext ctx)
     {
@@ -302,7 +320,7 @@ public sealed class ValueModel
         for (int pass = 0; pass < 2; pass++)
         {
             need = StaminaTarget(ctx, target.Speed, target.Guts);
-            target = Split(ctx, total, Math.Min(need.Stamina, c.MaxStats.Stamina));
+            target = Split(ctx, total, Math.Min((int)(need.Stamina * StaminaNeedShare), c.MaxStats.Stamina));
         }
 
         // Reachable targets close in on every stat as the career runs out, so a deficit is measured against the
@@ -320,14 +338,24 @@ public sealed class ValueModel
         // Wit also decides how often skills fire, whatever its share of the stat target.
         if (c.Stats.Wit < c.MaxStats.Wit) weights[ParamIds.Wit] += SkillWitValue(ctx);
 
-        // A goal race soon that the trainee lacks stamina for at today's Speed and Guts: stamina becomes urgent
-        // (once, however many goals). Earlier fields are weak and don't need a full spurt to beat (a Junior debut
-        // at Speed 250 / Guts 150 would "need" ~800), so only part of the requirement counts before Senior year.
-        double yearShare = ctx.Date.Year switch { 1 => 0.5, 2 => 0.75, _ => 1.0 };
+        // A goal race soon whose required place is at risk today (the race model, below GoalAtRisk) and that the
+        // trainee is short of Stamina for: stamina becomes urgent (once, however many goals). Comparing with the full
+        // requirement instead kept it urgent all career on a route with 3000 m goals that no budget reaches.
         if (ctx.RemainingGoals.Any(g => g.Race is not null && g.Turn - ctx.Turn <= 12
-                && c.Stats.Stamina < StaminaFor(ctx, g.Race, c.Stats.Speed, c.Stats.Guts) * yearShare))
+                && c.Stats.Stamina < StaminaFor(ctx, g.Race, c.Stats.Speed, c.Stats.Guts) * StaminaNeedShare
+                && GoalChance(ctx, g) < GoalAtRisk))
             weights[ParamIds.Stamina] *= 1.5;
         return new StatTargets(target, weights, RecoveryNote(ctx, need));
+    }
+
+    /// <summary>Chance of meeting a goal race's required place below which its Stamina shortfall is urgent.</summary>
+    public const double GoalAtRisk = 0.5;
+
+    /// <summary>The race model's chance of the goal's required place at today's stats (1st, top 3, top 5, or any place).</summary>
+    private static double GoalChance(CareerContext ctx, GoalRace goal)
+    {
+        var p = RaceEvaluator.PlacingFor(ctx, goal.Race!);
+        return goal.RequiredPlace switch { 1 => p.Win, <= 3 and > 0 => p.Top3, <= 5 and > 0 => p.Top5, _ => 1 };
     }
 
     public static int Get(Stats s, int stat) => stat switch

@@ -176,9 +176,12 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
     /// + 0.2 × Wit × style rate) / 2, every stat times the mood rate and counted half above 1200 (coefficients from
     /// master.mdb race_proper_*_rate and race_motivation_rate, as on uma.guide's race mechanics). It reads like a
     /// stat value. Stamina enters only as a shortfall against <see cref="RaceStamina.Required"/> (owned recovery
-    /// skills included): without HP for a full last spurt the trainee fades, each 10% short costing 4% of rating.
-    /// Junior fields cannot full-spurt a mile either, so the fade is relative: the rating is divided by the fade of a
-    /// field rival with Stamina at <see cref="Placing.FieldStamina"/> × the field rating (pace chaser, A distance).
+    /// skills included): without HP for a full last spurt the trainee fades, each 10% short costing
+    /// <see cref="Placing.FadePerShortfall"/> × 10% of rating. The fade is relative to a field rival's (pace chaser,
+    /// A distance): below G2 rivals have Stamina at <see cref="Placing.FieldStamina"/> × the field rating (Junior
+    /// fields can't full-spurt a mile either), but G1 and G2 rivals are built for the distance, at
+    /// <see cref="Placing.GradedFieldStamina"/> of a full spurt. With the old shared fade a trainee 60–80% short in
+    /// Classic G1s came out a 99% win and finished 2nd–8th (Oaks, Kikuka Sho, Queen Elizabeth II Cup, two careers).
     /// </para>
     /// <para>
     /// Field: career NPC groups (race_instance.npc_group_id 101–303) are not in master.mdb and no community source
@@ -193,15 +196,26 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
     /// <para>
     /// The relative difference d = rating / field − 1 maps through logistic curves with scale 0.08:
     /// win σ(d/0.08 − 0.5), top 3 σ(d/0.08 + 1), top 5 σ(d/0.08 + 1.8). An even match wins ~38% and places top 3
-    /// ~73%; 10% stronger wins ~68%; 10% weaker wins ~15%.
+    /// ~73%; 10% stronger wins ~68%; 10% weaker wins ~15%. Gates, positioning and skill rolls still upset a dominant
+    /// trainee (Taiki Shuttle came 9th in a Sprinters Stakes it should have won), so the chances are capped by
+    /// <see cref="Placing.UpsetCap"/>.
     /// </para>
     /// </summary>
     public sealed record Placing(double Rating, double Field, double Win, double Top3, double Top5, int StaminaNeeded)
     {
         public const double Scale = 0.08;
 
-        /// <summary>The field's Stamina as a share of its rating (calibrated): rivals fade too, early on most of all.</summary>
+        /// <summary>The field's Stamina as a share of its rating below G2 (calibrated): rivals fade too, early on most of all.</summary>
         public const double FieldStamina = 0.6;
+
+        /// <summary>G1 and G2 rivals' Stamina as a share of a full spurt: they are built for the distance (fitted, see <see cref="Placing"/>).</summary>
+        public const double GradedFieldStamina = 0.75;
+
+        /// <summary>Share of rating lost per whole shortfall of Stamina against a full spurt (fitted to the logged races; was 0.4).</summary>
+        public const double FadePerShortfall = 0.5;
+
+        /// <summary>Highest chance of 1st, top 3 and top 5: upsets happen to dominant trainees too (1 of ~25 dominant logged races, Taiki's 9th in a Sprinters Stakes).</summary>
+        public static readonly (double Win, double Top3, double Top5) UpsetCap = (0.95, 0.98, 0.99);
 
         /// <summary>Career rating curve (turn, field rating) the grade factor scales; see <see cref="Placing"/>.</summary>
         private static readonly (int Turn, double Rating)[] FieldCurve = [(12, 150), (24, 235), (48, 360), (72, 468), (78, 500)];
@@ -260,12 +274,16 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         int needed = RaceStamina.Required(race.Distance, ctx.Style, s.Speed, s.Guts, distanceApt, recovery: recovery);
         double field = Placing.FieldRating(ctx.Turn, race.Grade);
         int fieldNeeded = RaceStamina.Required(race.Distance, RunningStyle.PaceChaser, (int)field, (int)(0.6 * field), 7);
-        rating *= Fade(s.Stamina, needed) / Fade(Placing.FieldStamina * field, fieldNeeded);
+        double fieldStamina = race.Grade is (int)RaceGrade.G1 or (int)RaceGrade.G2
+            ? Placing.GradedFieldStamina * fieldNeeded : Placing.FieldStamina * field;
+        rating *= Fade(s.Stamina, needed) / Fade(fieldStamina, fieldNeeded);
 
         double z = (rating / field - 1) / Placing.Scale;
-        static double Fade(double stamina, int needed) => 1 - 0.4 * (needed <= 0 ? 0 : Math.Clamp(1 - stamina / needed, 0, 1));
+        static double Fade(double stamina, int needed) =>
+            1 - Placing.FadePerShortfall * (needed <= 0 ? 0 : Math.Clamp(1 - stamina / needed, 0, 1));
         static double Sigmoid(double x) => 1 / (1 + Math.Exp(-x));
-        return new Placing(rating, field, Sigmoid(z - 0.5), Sigmoid(z + 1), Sigmoid(z + 1.8), needed);
+        var cap = Placing.UpsetCap;
+        return new Placing(rating, field, cap.Win * Sigmoid(z - 0.5), cap.Top3 * Sigmoid(z + 1), cap.Top5 * Sigmoid(z + 1.8), needed);
     }
 
     /// <summary>Best optional race the trainee can enter this turn according to game data, if any.</summary>

@@ -46,15 +46,22 @@ public class PlaceChanceTests
     }
 
     [Fact]
-    public void TheLoggedWins_AreFavoured()
+    public void TheLoggedResults_AreRankedLikeTheyFinished()
     {
-        // The field is calibrated on these two wins from the turn logs (career-100901, 2026-10-21).
+        // From the turn logs. Wakagoma Stakes (career-100901): Classic OP, won.
         var wakagoma = new RaceProgram(195, 0, "Wakagoma Stakes", 400, 2000, Ground.Turf, 1, 2, 2, 0, 2000);
-        var classicOp = Placing(wakagoma, 26, new Stats(301, 152, 174, 233, 161), Mood.Great);
-        var arima = Placing(FakeGameData.ArimaKinen, 72, new Stats(642, 369, 404, 384, 348), Mood.Great);
+        Assert.InRange(Placing(wakagoma, 26, new Stats(301, 152, 174, 233, 161), Mood.Great).Win, 0.55, 0.95);
 
-        Assert.InRange(classicOp.Win, 0.55, 0.95);
-        Assert.InRange(arima.Win, 0.55, 0.95);
+        // Kikuka Sho (career-106802, turn 44): 3000 m G1 run ~80% short of a full spurt, 3rd. It read as a 99% win.
+        var kikuka = new RaceProgram(160, 0, "Kikuka Sho", 100, 3000, Ground.Turf, 10, 2, 2, 0, 20000);
+        var shortStamina = Placing(kikuka, 44, new Stats(643, 317, 342, 230, 402), Mood.Good);
+        Assert.True(shortStamina.Win < 0.4, shortStamina.ToString());
+        Assert.InRange(shortStamina.Top3, 0.4, 0.85);
+
+        // Japan Cup (career-106802, turn 70): 2400 m G1 ~27% short, won. Still a strong favourite, but never certain.
+        var japanCup = new RaceProgram(161, 0, "Japan Cup", 100, 2400, Ground.Turf, 11, 2, 3, 0, 30000);
+        var ready = Placing(japanCup, 70, new Stats(820, 584, 494, 389, 435), Mood.Great);
+        Assert.InRange(ready.Win, 0.75, RaceEvaluator.Placing.UpsetCap.Win);
     }
 
     [Fact]
