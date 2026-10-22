@@ -80,7 +80,22 @@ public sealed class SkillAdvisor(CareerContext ctx)
             >= 1 and <= 5 => 0.5,          // passive stat bonus
             _ => 0.5,
         };
-        return new Candidate(skill, price, fit, skill.GradeValue * fit * ability);
+        return new Candidate(skill, price, fit, skill.GradeValue * fit * ability * Activation(skill));
+    }
+
+    /// <summary>Chance a skill that rolls against Wit fires when its condition holds: (100 − 9000 / Wit)%, at least 20%.</summary>
+    public static double ActivationChance(int wit) => Math.Clamp(1 - 90.0 / Math.Max(1, wit), 0.2, 1);
+
+    /// <summary>
+    /// <see cref="ActivationChance"/> at the Wit expected on race day (<see cref="ValueModel.WitAt"/>), averaged
+    /// over the remaining goal races (today's Wit when none are left); 1 for skills without a Wit roll.
+    /// </summary>
+    public double Activation(SkillInfo skill)
+    {
+        if (!skill.WitCheck) return 1;
+        return ctx.RemainingGoals.Count == 0
+            ? ActivationChance(ctx.Character.Stats.Wit)
+            : ctx.RemainingGoals.Average(g => ActivationChance(ValueModel.WitAt(ctx, g.Turn)));
     }
 
     /// <summary>Share of a hint's discount counted for a skill that doesn't fit (wrong distance or style).</summary>
@@ -112,10 +127,17 @@ public sealed class SkillAdvisor(CareerContext ctx)
     /// <summary>
     /// Recovery skills that should fire in <paramref name="race"/>: owned ones in full and hinted ones (useful for
     /// the remaining goals, fit ≥ 0.5) at <see cref="HintedRecoveryCredit"/>, each times its fit for this race's
-    /// distance, ground and style. A gold skill replaces its white version, so a group counts once: a hinted gold
-    /// over an owned white adds only the difference.
+    /// distance, ground and style and its <see cref="ActivationChance"/> at the Wit expected that day. A gold skill
+    /// replaces its white version, so a group counts once: a hinted gold over an owned white adds only the difference.
     /// </summary>
     public IReadOnlyList<Recovery> RecoveryFor(RaceProgram race)
+    {
+        int turn = ctx.RemainingGoals.FirstOrDefault(g => g.Race == race)?.Turn ?? ctx.Turn;
+        double witChance = ActivationChance(ValueModel.WitAt(ctx, turn));
+        return RecoverySkills(race).Select(r => r.Skill.WitCheck ? r with { Fraction = r.Fraction * witChance } : r).ToList();
+    }
+
+    private IReadOnlyList<Recovery> RecoverySkills(RaceProgram race)
     {
         var owned = ctx.Character.Skills.Select(s => ctx.Data.Skill(s.SkillId)).OfType<SkillInfo>()
             .Where(s => s.RecoveryFraction > 0)

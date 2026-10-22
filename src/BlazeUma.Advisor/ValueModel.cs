@@ -14,10 +14,12 @@ public sealed record StatTargets(Stats Target, IReadOnlyDictionary<int, double> 
 /// </summary>
 public sealed class ValueModel
 {
-    // Relative importance of each stat before deficits are applied.
+    // Relative importance of each stat before deficits are applied. Wit's covers only its own race effects
+    // (positioning, rushing, mid-race speed): what it does for skills is SkillWitValue, added on top. It was 0.85
+    // before that was counted; 0.6–0.4 were replayed, and 0.5 keeps the flips to Junior/early Classic Wit trainings.
     private static readonly IReadOnlyDictionary<int, double> Priority = new Dictionary<int, double>
     {
-        [ParamIds.Speed] = 1.25, [ParamIds.Stamina] = 1.0, [ParamIds.Power] = 1.0, [ParamIds.Guts] = 0.6, [ParamIds.Wit] = 0.85,
+        [ParamIds.Speed] = 1.25, [ParamIds.Stamina] = 1.0, [ParamIds.Power] = 1.0, [ParamIds.Guts] = 0.6, [ParamIds.Wit] = 0.5,
     };
 
     public const double SkillPointValue = 0.35;
@@ -168,6 +170,53 @@ public sealed class ValueModel
     private static int Total(Stats s) => s.Speed + s.Stamina + s.Power + s.Guts + s.Wit;
 
     /// <summary>
+    /// Wit at a future turn: today's plus Wit's <see cref="Shares"/> of the stat gain still to come
+    /// (<see cref="ProjectedStatTotal"/>), spread evenly over the remaining turns, at most the cap. It doesn't
+    /// depend on the stat targets, so skill values (and the Stamina target through recovery skills) can use it.
+    /// </summary>
+    public static int WitAt(CareerContext ctx, int turn)
+    {
+        var c = ctx.Character;
+        var shares = Shares(ctx);
+        double gain = Math.Max(0, ProjectedStatTotal(ctx) - Total(c.Stats)) * shares[ParamIds.Wit] / shares.Values.Sum();
+        double elapsed = Math.Clamp((turn - ctx.Turn) / (double)Math.Max(1, CareerContext.FinalTurn - ctx.Turn), 0, 1);
+        return Math.Min(c.MaxStats.Wit, c.Stats.Wit + (int)(gain * elapsed));
+    }
+
+    /// <summary>
+    /// Skill points a turn brings from trainings, races and events (what Fast Learner's discount stretches and
+    /// skills still to buy are paid with): the one full logged career (Taiki Shuttle, turns 1–77) gained 20.4 a turn.
+    /// </summary>
+    public const double SkillPointsPerTurn = 20;
+    /// <summary>Share of skill points spent on skills that roll against Wit: white and gold active skills, not greens or uniques.</summary>
+    public const double WitCheckedSkillShare = 0.8;
+    /// <summary>Typical fit of a skill still to be bought (<see cref="SkillAdvisor.Plan"/> buys fit ≥ 0.5).</summary>
+    public const double BoughtSkillFit = 0.8;
+
+    /// <summary>
+    /// What one more Wit point is worth through skills. A skill that rolls against Wit fires with chance
+    /// 1 − 90/Wit (at least 20%), so a point adds 90/Wit² of it, at the Wit expected at each remaining goal race.
+    /// Skills are valued at their skill points × <see cref="SkillPointValue"/>: owned ones by base cost and fit, and
+    /// the points on hand and still to come (<see cref="SkillPointsPerTurn"/>), <see cref="WitCheckedSkillShare"/>
+    /// of them at <see cref="BoughtSkillFit"/>. Nothing once no goal race is left.
+    /// </summary>
+    public static double SkillWitValue(CareerContext ctx)
+    {
+        if (ctx.RemainingGoals.Count == 0) return 0;
+        var c = ctx.Character;
+        var skills = new SkillAdvisor(ctx);
+        double owned = c.Skills.Select(s => ctx.Data.Skill(s.SkillId)).OfType<SkillInfo>().Where(s => s.WitCheck)
+            .Sum(s => s.BaseCost * skills.Fit(s.Condition));
+        double toBuy = (c.SkillPoints + ctx.TurnsLeft * SkillPointsPerTurn) * WitCheckedSkillShare * BoughtSkillFit;
+        double perPoint = ctx.RemainingGoals.Average(g =>
+        {
+            int wit = WitAt(ctx, g.Turn);
+            return SkillAdvisor.ActivationChance(wit) is > 0.2 and < 1 ? 90.0 / ((double)wit * wit) : 0;
+        });
+        return (owned + toBuy) * SkillPointValue * perPoint;
+    }
+
+    /// <summary>
     /// Shares of the projected total besides Stamina, per goal distance (uma.guide stats page: Stamina ≈ Speed to
     /// the cap, then Power ~800–1000 ≈ Wit, Guts last). Power is acceleration and position fighting, which decide
     /// short races with short spurts, so sprint and mile take more of it; Guts lowers late-race HP use and wins
@@ -268,6 +317,8 @@ public sealed class ValueModel
                 : Priority[stat] * (0.25 + 0.5 * Math.Min((goal - current) / (goal * toGain), 1.5));
             weights[stat] = weight;
         }
+        // Wit also decides how often skills fire, whatever its share of the stat target.
+        if (c.Stats.Wit < c.MaxStats.Wit) weights[ParamIds.Wit] += SkillWitValue(ctx);
 
         // A goal race soon that the trainee lacks stamina for at today's Speed and Guts: stamina becomes urgent
         // (once, however many goals). Earlier fields are weak and don't need a full spurt to beat (a Junior debut
@@ -508,8 +559,6 @@ public sealed class ValueModel
     public const double SlackerSkipChance = 0.1;
     /// <summary>Share of a typical training's gains that is Speed: the Speed training's main stat, Guts' and Wit's second.</summary>
     public const double SpeedShareOfTraining = 0.3;
-    /// <summary>Skill points a turn brings from trainings, races and events, which Fast Learner's discount stretches (estimate).</summary>
-    public const double SkillPointsPerTurn = 15;
     /// <summary>Partners on a typical training, each getting Charming's extra bond.</summary>
     public const double PartnersPerTraining = 2;
 

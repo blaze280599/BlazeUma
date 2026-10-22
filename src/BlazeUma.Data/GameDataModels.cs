@@ -68,10 +68,12 @@ public sealed record GoalRace(int RouteRaceId, int SortId, int Turn, int Require
 /// <summary>
 /// A skill_data row. AbilityValue is its first effect's float_ability_value_1_1; for stamina recovery
 /// (ability type 9) it is in 1/10000 of max HP: 150 for white skills, 550 for gold (negative = drains others).
+/// WitCheck is activate_lot: the skill only fires if a Wit roll passes (white and gold active skills; not
+/// green passives or unique skills).
 /// </summary>
 public sealed record SkillInfo(
     int Id, string Name, int Rarity, int GroupId, int GradeValue, int BaseCost,
-    string Condition, int AbilityType, int AbilityValue = 0)
+    string Condition, int AbilityType, int AbilityValue = 0, bool WitCheck = false)
 {
     public bool IsGold => Rarity >= 2 && Rarity < 3;
 

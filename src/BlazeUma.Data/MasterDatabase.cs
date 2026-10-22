@@ -141,11 +141,12 @@ public sealed class MasterDatabase : IGameData, IDisposable
     {
         if (_skills.TryGetValue(skillId, out var cached)) return cached;
         var rows = Query("""
-            select s.id, s.rarity, s.group_id, s.grade_value, coalesce(n.need_skill_point, 0), s.condition_1, s.ability_type_1_1, s.float_ability_value_1_1
+            select s.id, s.rarity, s.group_id, s.grade_value, coalesce(n.need_skill_point, 0), s.condition_1, s.ability_type_1_1, s.float_ability_value_1_1,
+                   s.activate_lot
             from skill_data s left join single_mode_skill_need_point n on n.id = s.id where s.id = $id
             """,
             r => new SkillInfo(r.GetInt32(0), Text(TextSkill, r.GetInt32(0)) ?? $"skill {r.GetInt32(0)}", r.GetInt32(1), r.GetInt32(2),
-                r.GetInt32(3), r.GetInt32(4), r.GetString(5), r.GetInt32(6), r.GetInt32(7)),
+                r.GetInt32(3), r.GetInt32(4), r.GetString(5), r.GetInt32(6), r.GetInt32(7), r.GetInt32(8) != 0),
             ("$id", skillId));
         return _skills[skillId] = rows.FirstOrDefault();
     }
