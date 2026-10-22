@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using BlazeUma.Advisor;
 using BlazeUma.Data;
 using BlazeUma.Memory;
@@ -11,7 +9,7 @@ namespace BlazeUma.Cli;
 /// <summary>
 /// Advisor: reads the game once a second and shows the recommended action, redrawn when it changes. Waits
 /// for the game and reconnects after restarts. Each turn (advice + measured outcome) is logged to
-/// logs/career-*.jsonl next to the exe. Esc goes back to the menu, V shows or hides the reasons for every option.
+/// career-*.jsonl in the shared log folder (<see cref="CareerLogs.DefaultDirectory"/>). Esc goes back to the menu, V shows or hides the reasons for every option.
 /// </summary>
 internal static class AdvisorMode
 {
@@ -20,13 +18,7 @@ internal static class AdvisorMode
 
     public static Mode Run()
     {
-        var json = new JsonSerializerOptions
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            Converters = { new JsonStringEnumConverter() },
-        };
-        var log = new CareerLog(Path.Combine(AppContext.BaseDirectory, "logs"), json);
-        var races = new RaceHistory();
+        var log = CareerLog.Create();
         bool verbose = false;
         var formatter = AdviceFormatter.ForConsole(verbose);
         string Hint() => $"Esc main menu · V {(verbose ? "hide" : "show")} details";
@@ -62,16 +54,16 @@ internal static class AdvisorMode
                         if (data is null)
                         {
                             data = MasterDatabase.Open(MasterDatabase.PathInGameDirectory(reader.GameDirectory));
-                            advisor = new CareerAdvisor(data);
+                            advisor = new CareerAdvisor(data, CareerLogs.LearnedOdds(CareerLogs.DefaultDirectory).Odds);
                         }
                     }
-                    var snapshot = races.Stamp(reader.Snapshot());
+                    var snapshot = log.Stamp(reader.Snapshot());
                     failures = 0;
                     var advice = advisor!.Advise(snapshot);
                     log.Observe(snapshot, advice);
                     Show(formatter.Format(advice, DateTimeOffset.MinValue), () => formatter.Format(advice, snapshot.ReadAt)
                         + Environment.NewLine + Environment.NewLine + formatter.Footer(Hint())
-                        + (log.CurrentPath is { } path ? Environment.NewLine + formatter.Footer($"logging to {path}") : ""));
+                        + (log.CurrentPath is { } path ? Environment.NewLine + formatter.Footer($"logging to {path}{(log.Resumed ? " (resumed)" : "")}") : ""));
                 }
                 catch (InvalidOperationException e)
                 {

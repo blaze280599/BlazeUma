@@ -1,6 +1,7 @@
 """Measure advisor constants from career logs (JSONL LogRecords written by TurnRecorder). No game access.
 
-usage: measure_logs.py [PATH ...]   files or folders of career-*.jsonl; default logs/ and publish/logs/
+usage: measure_logs.py [PATH ...]   files or folders of career-*.jsonl; default the shared log folder
+(BLAZEUMA_LOGS, else ~/BlazeUma/logs) that the bot and Advisor mode write to
 Race programs are looked up in the master.mdb cache MasterDatabase keeps (%LOCALAPPDATA%/BlazeUma/master.mdb);
 without it races are grouped by turn only. Each estimate prints the C# constant it should replace.
 """
@@ -8,6 +9,7 @@ import glob, json, os, re, sqlite3, sys
 from collections import Counter, defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOGS = os.environ.get('BLAZEUMA_LOGS') or os.path.join(os.path.expanduser('~'), 'BlazeUma', 'logs')
 MASTER = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'BlazeUma', 'master.mdb')
 MOOD = {'Awful': 1, 'Bad': 2, 'Normal': 3, 'Good': 4, 'Great': 5}
 GRADE = {100: 'G1', 200: 'G2', 300: 'G3', 400: 'OP', 700: 'Pre-OP', 800: 'Maiden', 900: 'Debut'}
@@ -16,7 +18,7 @@ HAPPY_MEEK = 2001
 MIN_SAMPLES = 3
 
 def records(args):
-    paths = args or [os.path.join(ROOT, 'logs'), os.path.join(ROOT, 'publish', 'logs')]
+    paths = args or [LOGS]
     files = []
     for p in paths:
         files += sorted(glob.glob(os.path.join(p, 'career-*.jsonl'))) if os.path.isdir(p) else [p]

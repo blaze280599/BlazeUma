@@ -1,12 +1,13 @@
-using System.Text.Json;
 using BlazeUma.Advisor;
 
 namespace BlazeUma.Cli;
 
 /// <summary>
-/// <c>BlazeUma event-odds &lt;file.jsonl|dir&gt;... [--out path]</c>: counts what each event choice did in the
-/// "event-result" records of career logs and writes the odds file the advisor loads (data/event-odds.json
-/// next to the exe unless <c>--out</c> says otherwise). Results whose outcome was ambiguous are left out.
+/// <c>BlazeUma event-odds [file.jsonl|dir]... [--out path]</c>: counts what each event choice did in the
+/// "event-result" records of career logs (the shared log folder when no path is given) and writes the odds file
+/// shipped beside the exe (data/event-odds.json unless <c>--out</c> says otherwise). The bot and Advisor mode
+/// rebuild the same odds from the shared folder when they start; the file is their fallback. Results whose outcome
+/// was ambiguous are left out.
 /// </summary>
 internal static class EventOddsCommand
 {
@@ -19,11 +20,7 @@ internal static class EventOddsCommand
             if (args[i] == "--out" && i + 1 < args.Length) output = args[++i];
             else paths.Add(args[i]);
         }
-        if (paths.Count == 0)
-        {
-            Console.Error.WriteLine("usage: BlazeUma event-odds <file.jsonl|dir>... [--out path]");
-            return 2;
-        }
+        if (paths.Count == 0) paths.Add(CareerLogs.DefaultDirectory);
         var missing = paths.Where(p => !File.Exists(p) && !Directory.Exists(p)).ToList();
         if (missing.Count > 0)
         {
@@ -32,21 +29,7 @@ internal static class EventOddsCommand
         }
         output ??= EventOdds.DefaultPath;
 
-        var odds = new EventOdds();
-        int results = 0, ambiguous = 0, unreadable = 0;
-        foreach (string file in paths.SelectMany(Replay.Files))
-            foreach (string text in File.ReadLines(file))
-            {
-                if (string.IsNullOrWhiteSpace(text)) continue;
-                LogRecord? record;
-                try { record = JsonSerializer.Deserialize<LogRecord>(text, LogRecord.JsonOptions); }
-                catch (JsonException) { unreadable++; continue; }
-                if (record is not { Kind: "event-result", Result: { } result }) continue;
-                if (result is { Choice: null } or { Outcome: null }) { ambiguous++; continue; }
-                odds.Add(result);
-                results++;
-            }
-
+        var (odds, files, results, ambiguous, unreadable) = CareerLogs.CountEventOdds(paths.SelectMany(Replay.Files).ToList());
         foreach (var (key, choices) in odds.Counts.OrderBy(k => k.Key))
             foreach (var (choice, counts) in choices.OrderBy(c => c.Key))
             {
@@ -56,7 +39,7 @@ internal static class EventOddsCommand
             }
         odds.Save(output);
         Console.WriteLine();
-        Console.WriteLine($"{results} event results counted, {ambiguous} ambiguous skipped, {unreadable} unreadable lines; wrote {output}");
+        Console.WriteLine($"{results} event results counted from {files} logs, {ambiguous} ambiguous skipped, {unreadable} unreadable lines; wrote {output}");
         return 0;
     }
 }

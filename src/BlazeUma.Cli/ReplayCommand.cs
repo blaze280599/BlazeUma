@@ -4,8 +4,8 @@ using BlazeUma.Data;
 namespace BlazeUma.Cli;
 
 /// <summary>
-/// <c>BlazeUma replay &lt;file.jsonl|dir&gt;... [--all] [--db master.mdb]</c>: re-runs the advisor on logged
-/// snapshots and lists the picks it would now change. No game needed; game data comes from the master.mdb
+/// <c>BlazeUma replay [file.jsonl|dir]... [--all] [--db master.mdb]</c>: re-runs the advisor on logged
+/// snapshots (the shared log folder when no path is given) and lists the picks it would now change. No game needed; game data comes from the master.mdb
 /// copy the app keeps in %LOCALAPPDATA%\BlazeUma.
 /// </summary>
 internal static class ReplayCommand
@@ -21,11 +21,7 @@ internal static class ReplayCommand
             else if (args[i] == "--db" && i + 1 < args.Length) db = args[++i];
             else paths.Add(args[i]);
         }
-        if (paths.Count == 0)
-        {
-            Console.Error.WriteLine("usage: BlazeUma replay <file.jsonl|dir>... [--all] [--db master.mdb]");
-            return 2;
-        }
+        if (paths.Count == 0) paths.Add(CareerLogs.DefaultDirectory);
         db ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BlazeUma", "master.mdb");
         if (!File.Exists(db))
         {

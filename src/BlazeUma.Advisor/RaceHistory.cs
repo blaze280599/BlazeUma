@@ -7,7 +7,8 @@ namespace BlazeUma.Advisor;
 /// snapshot as <see cref="CareerSnapshot.RaceTurns"/>. The game keeps a race history
 /// (WorkSingleModeData._raceHistoryInfoList, research 2026-10-21) but its layout is not mapped yet, so a turn
 /// counts as raced when fans went up between its first snapshot and the next turn's (as
-/// <see cref="TurnRecorder.InferAction"/> does). Turns read before the session started are unknown.
+/// <see cref="TurnRecorder.InferAction"/> does). Turns before the session started come from the career's log
+/// when an earlier run wrote one (<see cref="Seed"/>).
 /// </summary>
 public sealed class RaceHistory
 {
@@ -15,6 +16,9 @@ public sealed class RaceHistory
     private CareerSnapshot? _turnStart;
 
     public IReadOnlyCollection<int> Turns => _turns;
+
+    /// <summary>Turns raced before this session, from an earlier run's log of the same career.</summary>
+    public void Seed(IEnumerable<int> turns) => _turns.UnionWith(turns);
 
     public CareerSnapshot Stamp(CareerSnapshot snapshot)
     {

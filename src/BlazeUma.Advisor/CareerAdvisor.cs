@@ -3,8 +3,11 @@ using BlazeUma.Memory.Game;
 
 namespace BlazeUma.Advisor;
 
-/// <summary>Entry point: picks the right advisor for the screen the game is showing.</summary>
-public sealed class CareerAdvisor(IGameData data)
+/// <summary>
+/// Entry point: picks the right advisor for the screen the game is showing. <paramref name="odds"/>: event odds
+/// learned from career logs (<see cref="CareerLogs.LearnedOdds"/>); the shipped file when null.
+/// </summary>
+public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
 {
     private const string SkillScreen = "Gallop.SingleModeSkillLearningViewController";
     private const string RaceScreen = "Gallop.SingleModeRaceEntryViewController";
@@ -57,7 +60,7 @@ public sealed class CareerAdvisor(IGameData data)
             // The previews should belong to this event; seen to match once so far, so only warn on a mismatch.
             if (snapshot.EventChoicesEventId is int choicesFor && choicesFor != story.EventId)
                 notes.Insert(0, new Note("Warning", $"choices were built for event {choicesFor}, but event {story.EventId} is showing; they may be stale"));
-            var ranked = new EventAdvisor(ctx, values).Rank(choices, story);
+            var ranked = new EventAdvisor(ctx, values, odds).Rank(choices, story);
             return new Advice(Situation.Event, header, $"Event \"{title}\": {ranked[0].Label}", ranked, notes, details);
         }
 

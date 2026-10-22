@@ -62,8 +62,12 @@ All constants are heuristics in `ValueModel` and the advisors, meant to be tuned
 
 ## Turn log
 
-Advisor mode appends to `logs/career-<cardId>-<time>.jsonl` next to the exe. Each completed turn writes a `turn` record: the start-of-turn snapshot, the advice,
-and the measured outcome at the start of the next turn (stat/energy/mood/SP/fan/bond changes,
+Advisor mode and the auto bot write to one shared folder whichever exe runs: `%USERPROFILE%\BlazeUma\logs`
+(or the `BLAZEUMA_LOGS` environment variable). There is one `career-<cardId>-<time>.jsonl` per career. A career
+resumed in a later run appends to its earlier file, found by trainee, scenario and deck with the turn, fans and
+skill count never going back; the races that file records carry over into the race streak.
+
+Each completed turn writes a `turn` record: the start-of-turn snapshot, the advice, and the measured outcome at the start of the next turn (stat/energy/mood/SP/fan/bond changes,
 conditions, skills learned, and a best-guess action such as `training:101`, `outing:9008`, `race`,
 `rest`). Each event shown writes an `event` record. The log is what the estimates get tuned from.
 
@@ -73,22 +77,23 @@ conditions, skills learned, and a best-guess action such as `training:101`, `out
 game data comes from the `master.mdb` copy in `%LOCALAPPDATA%\BlazeUma` (or `--db <path>`).
 
 ```powershell
-.\publish\BlazeUma.exe replay logs publish\logs          # one row per turn/event; FLIP marks a changed pick
-.\publish\BlazeUma.exe replay logs\career-....jsonl --all  # also the top 3 options with scores, old vs new
+.\publish\BlazeUma.exe replay                           # the shared log folder; one row per turn/event; FLIP marks a changed pick
+.\publish\BlazeUma.exe replay "$HOME\BlazeUma\logs\career-....jsonl" --all  # one career; also the top 3 options, old vs new
 ```
 
 It ends with counts of records replayed, flips, and records that could not be read or advised (with the reason).
 
 ### Event odds
 
-`event-odds` counts what each event choice did (the `event-result` records) and writes `data/event-odds.json`,
-which the event advisor loads from beside the exe. A choice with at least 5 logged results uses those odds
+The bot and Advisor mode rebuild event odds from every log in the shared folder when they start (the bot prints
+how many results they rest on). `event-odds` does the same count by hand and writes `data/event-odds.json`, the
+fallback used while the logs hold no event results. A choice with at least 5 logged results uses those odds
 (Laplace-smoothed, "odds from N logged results"); hard-coded trainee odds still win, and the rest weight outcomes
 equally. Trainee events pool across trainees. The repo copy is `data/event-odds.json`, copied on build.
 
 ```powershell
-.\publish\BlazeUma.exe event-odds logs publish\logs                          # writes publish\data\event-odds.json
-dotnet run --project src\BlazeUma.Cli -- event-odds logs publish\logs --out data\event-odds.json  # the repo copy
+.\publish\BlazeUma.exe event-odds                                          # shared logs → publish\data\event-odds.json
+dotnet run --project src\BlazeUma.Cli -- event-odds --out data\event-odds.json  # the repo copy
 ```
 
 ## In-game agent (automation, in progress)
