@@ -1,5 +1,8 @@
 # BlazeUma
 
+<img width="1118" height="623" alt="image" src="https://github.com/user-attachments/assets/27a7138e-7ee0-4e1a-ac17-9b9f0f273e58" />
+
+
 Career helper for Umamusume: Pretty Derby (Steam). It reads game state from memory
 (read-only) and will drive a URA Finale career in advisor → supervised → auto modes.
 
