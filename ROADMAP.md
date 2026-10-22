@@ -214,10 +214,10 @@ message says which logged picks it changed. The logs are thin so far (~24 record
 `publish/logs/`), so the harness is a sanity check that gets better as more careers are logged.
 
 **Wave 1**
-- A1. [ ] **Replay harness**: `BlazeUma.Cli replay <log.jsonl|dir> [--baseline <git-ref>]` re-runs `CareerAdvisor`
+- A1. [x] **Replay harness**: `BlazeUma.Cli replay <log.jsonl|dir> [--baseline <git-ref>]` re-runs `CareerAdvisor`
   on logged snapshots and prints each record's logged pick next to the current pick, flagging flips; plus a
   test that replays a small fixture log. *Done when:* running it on today's logs prints a flip report.
-- A2. [ ] **Measurement script**: `research/scripts/measure_logs.py` pulls outing / rest energy, race SP and
+- A2. [x] **Measurement script**: `research/scripts/measure_logs.py` pulls outing / rest energy, race SP and
   stats per grade, Happy Meek duel results and event outcomes from the logs, with sample counts.
   *Done when:* it prints a table per estimate that names the constant in the code it should replace.
 
