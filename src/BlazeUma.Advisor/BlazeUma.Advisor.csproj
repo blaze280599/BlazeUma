@@ -12,4 +12,10 @@
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
+  <!-- Event outcome counts learned from career logs (EventOdds), beside the exe; rebuild with `BlazeUma event-odds`. -->
+  <ItemGroup>
+    <None Include="..\..\data\event-odds.json" Link="data\event-odds.json"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
 </Project>

@@ -79,6 +79,18 @@ game data comes from the `master.mdb` copy in `%LOCALAPPDATA%\BlazeUma` (or `--d
 
 It ends with counts of records replayed, flips, and records that could not be read or advised (with the reason).
 
+### Event odds
+
+`event-odds` counts what each event choice did (the `event-result` records) and writes `data/event-odds.json`,
+which the event advisor loads from beside the exe. A choice with at least 5 logged results uses those odds
+(Laplace-smoothed, "odds from N logged results"); hard-coded trainee odds still win, and the rest weight outcomes
+equally. Trainee events pool across trainees. The repo copy is `data/event-odds.json`, copied on build.
+
+```powershell
+.\publish\BlazeUma.exe event-odds logs publish\logs                          # writes publish\data\event-odds.json
+dotnet run --project src\BlazeUma.Cli -- event-odds logs publish\logs --out data\event-odds.json  # the repo copy
+```
+
 ## In-game agent (automation, in progress)
 
 `agent/` is a small C++ DLL loaded into the game; `src/BlazeUma.Automation` injects it and talks to it

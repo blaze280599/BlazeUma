@@ -4,11 +4,14 @@ namespace BlazeUma.Advisor;
 
 /// <summary>
 /// Scores event choices from the game's own choice previews. The game does not store outcome odds, so known
-/// trainee events use community-measured odds (umareference.com/guide/percentages-of-events) and the rest
-/// assume every outcome is equally likely.
+/// trainee events use community-measured odds (umareference.com/guide/percentages-of-events), choices with
+/// enough logged results use odds learned from career logs (<see cref="EventOdds"/>), and the rest assume
+/// every outcome is equally likely.
 /// </summary>
-public sealed class EventAdvisor(CareerContext ctx, ValueModel values)
+public sealed class EventAdvisor(CareerContext ctx, ValueModel values, EventOdds? learned = null)
 {
+    private readonly EventOdds _learned = learned ?? EventOdds.Default;
+
     /// <summary>Odds per choice, keyed by the last three digits of a trainee story id (501 + chara + event).</summary>
     private static readonly Dictionary<int, double[][]> TraineeEventOdds = new()
     {
@@ -28,6 +31,11 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values)
             int i = choice.Choice - 1;
             double[]? p = odds is not null && i < odds.Length && odds[i].Length == choice.Outcomes.Count ? odds[i] : null;
             var reasons = new List<string>();
+            if (p is null && choice.Outcomes.Count > 1 && story is not null && _learned.For(story.StoryId, choice.Choice, choice.Outcomes.Count) is var (lp, n))
+            {
+                p = lp;
+                reasons.Add($"odds from {n} logged results");
+            }
             double expected = 0;
             for (int o = 0; o < choice.Outcomes.Count; o++)
             {
