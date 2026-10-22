@@ -239,7 +239,7 @@ message says which logged picks it changed. The logs are thin so far (~24 record
   year; race rewards from A2's measurements.
 
 **Wave 5** (one after the other: both touch `TurnAdvisor`)
-- A9. [ ] **Per-condition costs** (Infirmary, Rest & Recreation, event effects).
+- A9. [x] **Per-condition costs** (Infirmary, Rest & Recreation, event effects).
 - A10. [ ] **Hint value from the card's real hint skills** (fit × rating × discount).
 
 ## Later
