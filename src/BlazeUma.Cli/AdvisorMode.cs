@@ -26,6 +26,7 @@ internal static class AdvisorMode
             Converters = { new JsonStringEnumConverter() },
         };
         var log = new CareerLog(Path.Combine(AppContext.BaseDirectory, "logs"), json);
+        var races = new RaceHistory();
         bool verbose = false;
         var formatter = AdviceFormatter.ForConsole(verbose);
         string Hint() => $"Esc main menu · V {(verbose ? "hide" : "show")} details";
@@ -64,7 +65,7 @@ internal static class AdvisorMode
                             advisor = new CareerAdvisor(data);
                         }
                     }
-                    var snapshot = reader.Snapshot();
+                    var snapshot = races.Stamp(reader.Snapshot());
                     failures = 0;
                     var advice = advisor!.Advise(snapshot);
                     log.Observe(snapshot, advice);

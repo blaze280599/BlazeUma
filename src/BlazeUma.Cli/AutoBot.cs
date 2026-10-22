@@ -44,6 +44,8 @@ internal sealed class AutoBot(BotControl control)
     private int _skillsTurn = -1;
     /// <summary>The same career log as Advisor mode (turns, events and what each event did), next to the exe.</summary>
     private CareerLog? _log;
+    /// <summary>Turns raced so far, so the advisor can see a run of races (see <see cref="RaceHistory"/>).</summary>
+    private RaceHistory _races = new();
 
     public Mode Run()
     {
@@ -107,6 +109,7 @@ internal sealed class AutoBot(BotControl control)
         _actionsThisTurn = 0;
         int failures = 0;
         _log = CareerLog.Create();
+        _races = new RaceHistory();
 
         Console.WriteLine();
         Console.WriteLine("  " + ConsoleUi.Bold("Playing.") + ConsoleUi.Dim("  Insert = pause · Page Down = stop (they work while the game has focus)"));
@@ -170,7 +173,7 @@ internal sealed class AutoBot(BotControl control)
     /// <summary>Reads the game and carries out one advisor pick.</summary>
     private (Outcome, string?) Round(GameReader reader, CareerAdvisor advisor, MasterDatabase data)
     {
-        var snapshot = reader.Snapshot();
+        var snapshot = _races.Stamp(reader.Snapshot());
         if (snapshot.Screen?.ViewController == InspirationScreen) return (Inspiration(reader), null);
         var advice = advisor.Advise(snapshot);
         _log?.Observe(snapshot, advice);

@@ -117,4 +117,9 @@ public sealed record CareerSnapshot(
     int? EventChoicesEventId,
     SkillShop? SkillShop,
     RaceList? RaceList,
-    IReadOnlyList<string> Errors);
+    IReadOnlyList<string> Errors,
+    /// <summary>
+    /// Earlier turns of this career the trainee raced on, from the turn log (not read from memory); null when no
+    /// log was kept. Filled by <c>RaceHistory</c> in BlazeUma.Advisor.
+    /// </summary>
+    IReadOnlyList<int>? RaceTurns = null);

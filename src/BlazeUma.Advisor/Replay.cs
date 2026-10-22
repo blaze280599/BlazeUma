@@ -42,6 +42,7 @@ public static class Replay
         foreach (string file in files)
         {
             string name = Path.GetFileName(file);
+            var raceTurns = RaceTurns(file);
             int line = 0;
             foreach (string text in File.ReadLines(file))
             {
@@ -56,7 +57,11 @@ public static class Replay
                 try
                 {
                     // Older logs may lack lists added since; read them as empty rather than fail.
-                    var snapshot = record.Snapshot with { Errors = record.Snapshot.Errors ?? [] };
+                    var snapshot = record.Snapshot with
+                    {
+                        Errors = record.Snapshot.Errors ?? [],
+                        RaceTurns = record.Snapshot.RaceTurns ?? raceTurns.Where(t => t < record.Turn).ToList(),
+                    };
                     var advice = advisor.Advise(snapshot);
                     rows.Add(new ReplayRow(name, line, record.Kind, record.Turn, record.Summary ?? "",
                         advice.Summary, record.Options ?? [], advice.Options));
@@ -68,5 +73,23 @@ public static class Replay
             }
         }
         return new ReplayResult(rows, failures, skipped);
+    }
+
+    /// <summary>
+    /// Turns a log's "turn" records say were raced, for logs written before snapshots carried
+    /// <see cref="BlazeUma.Memory.Game.CareerSnapshot.RaceTurns"/>.
+    /// </summary>
+    private static IReadOnlyList<int> RaceTurns(string file)
+    {
+        var turns = new List<int>();
+        foreach (string text in File.ReadLines(file))
+        {
+            if (string.IsNullOrWhiteSpace(text)) continue;
+            LogRecord? record;
+            try { record = JsonSerializer.Deserialize<LogRecord>(text, LogRecord.JsonOptions); }
+            catch (JsonException) { continue; }
+            if (record is { Kind: "turn", Outcome: { InferredAction: "race" } o } && o.NextTurn == o.Turn + 1) turns.Add(o.Turn);
+        }
+        return turns;
     }
 }

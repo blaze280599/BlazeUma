@@ -9,6 +9,21 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
     public const int MinAptitude = 6;
     private const double RaceEnergyCost = -15;
 
+    /// <summary>
+    /// Chance of the post-race penalty event for the Nth race in a row (index = N; below 3 there is none).
+    /// From the 3rd race in a row the trainee may get an event that lowers mood and stats or adds Skin Outbreak
+    /// (uma.guide career mechanics, "Skin Outbreak: random chance from consecutive races (3 or more)";
+    /// GameWith Global, "4 or more consecutive races will also cause the same disadvantages"). No source gives
+    /// the rate; these are estimates that rise with the streak, to be replaced once logs measure them.
+    /// </summary>
+    private static readonly double[] StreakEventChance = [0, 0, 0, 0.3, 0.5, 0.7];
+
+    /// <summary>
+    /// The penalty event takes 10 from three random stats (GameWith Global) and lowers mood or adds Skin Outbreak
+    /// (a chance of −1 mood each turn until cured); counted here as half a chance of each.
+    /// </summary>
+    private const int StreakStatLoss = 3 * 10;
+
     public ScoredOption Evaluate(RaceProgram race)
     {
         var reasons = new List<string>();
@@ -71,12 +86,50 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         score += energy;
         reasons.Add($"energy {RaceEnergyCost} ({energy:0.0})");
 
+        if (StreakPenalty(out string streakReason) is var streak and > 0)
+        {
+            score -= streak;
+            reasons.Add(streakReason);
+        }
+
         if (ctx.NextGoal is { } next && next.Turn - ctx.Turn is > 0 and <= 2)
         {
             score -= 8;
             reasons.Add($"{next.Name} is in {next.Turn - ctx.Turn} turn(s); avoid racing back to back (-8)");
         }
         return new ScoredOption(race.Name, score, reasons);
+    }
+
+    /// <summary>
+    /// Races run in a row right before this turn. Goal turns are always raced; other turns count when
+    /// <see cref="BlazeUma.Memory.Game.CareerSnapshot.RaceTurns"/> lists them (without a turn log only goal races
+    /// are known).
+    /// </summary>
+    public static int StreakBefore(CareerContext ctx)
+    {
+        var raced = ctx.Snapshot.RaceTurns;
+        int streak = 0;
+        for (int t = ctx.Turn - 1; t >= 1 && (ctx.IsGoalTurn(t) || raced?.Contains(t) == true); t--) streak++;
+        return streak;
+    }
+
+    /// <summary>
+    /// Expected loss from the consecutive-race event if this race is the 3rd or later in a row. A goal race
+    /// as the 3rd or later race does not trigger it (GameWith Global: "if the 3rd race or later one is a Goal
+    /// Race, no disadvantages will occur"), so a goal right after this race adds no cost of its own; it still
+    /// lengthens the streak for any race after it, which that turn's evaluation counts.
+    /// </summary>
+    private double StreakPenalty(out string reason)
+    {
+        int nth = StreakBefore(ctx) + 1;
+        reason = "";
+        if (nth < 3) return 0;
+        double chance = StreakEventChance[Math.Min(nth, StreakEventChance.Length - 1)];
+        double loss = StreakStatLoss * values.AverageStatWeight
+            + 0.5 * Math.Abs(values.Mood(-1)) + 0.5 * ValueModel.BadConditionValue;
+        double penalty = chance * loss;
+        reason = $"race {nth} in a row: {chance:P0} chance of an event taking -10 from 3 stats and mood or Skin Outbreak (-{penalty:0.0})";
+        return penalty;
     }
 
     private int? _suitableTurns;
