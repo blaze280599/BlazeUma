@@ -233,9 +233,9 @@ message says which logged picks it changed. The logs are thin so far (~24 record
   bad conditions.
 
 **Wave 4**
-- A7. [ ] **Short lookahead** (`TurnAdvisor`, `ValueModel`): facility-level progress, and energy valued
+- A7. [x] **Short lookahead** (`TurnAdvisor`, `ValueModel`): facility-level progress, and energy valued
   against the coming turns (goal races, summer camp, partners lined up).
-- A8. [ ] **Place chance from stats** (`RaceEvaluator`): compare stats with a typical field for the grade and
+- A8. [x] **Place chance from stats** (`RaceEvaluator`): compare stats with a typical field for the grade and
   year; race rewards from A2's measurements.
 
 **Wave 5** (one after the other: both touch `TurnAdvisor`)
