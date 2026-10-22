@@ -222,9 +222,9 @@ message says which logged picks it changed. The logs are thin so far (~24 record
   *Done when:* it prints a table per estimate that names the constant in the code it should replace.
 
 **Wave 2**
-- A3. [ ] **Achievable stat targets** (`ValueModel`): split a projected stat budget (turns left × average gain)
+- A3. [x] **Achievable stat targets** (`ValueModel`): split a projected stat budget (turns left × average gain)
   by priority, not cap-based Speed; Power/Guts/Wit targets depend on distance and style.
-- A4. [ ] **Event odds from logs** (`EventAdvisor`): an odds table built from `event-result` records, used when
+- A4. [x] **Event odds from logs** (`EventAdvisor`): an odds table built from `event-result` records, used when
   there are enough samples; equal weights otherwise.
 
 **Wave 3**
