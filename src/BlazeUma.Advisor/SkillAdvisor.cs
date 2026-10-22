@@ -70,6 +70,26 @@ public sealed class SkillAdvisor(CareerContext ctx)
         return new Candidate(skill, price, fit, skill.GradeValue * fit * ability);
     }
 
+    /// <summary>Share of a hint's discount counted for a skill that doesn't fit (wrong distance or style).</summary>
+    public const double OffFitHintShare = 0.1;
+
+    /// <summary>
+    /// Worth of <paramref name="levels"/> more hint levels on a skill: the skill points the discount saves (on its
+    /// base cost, at <see cref="ValueModel.SkillPointValue"/>), times its fit if it is worth buying (as in
+    /// <see cref="Plan"/>), else <see cref="OffFitHintShare"/>. Nothing when owned or already at the top level.
+    /// </summary>
+    public double HintWorth(SkillInfo skill, int levels = 1)
+    {
+        if (ctx.Character.Skills.Any(s => s.SkillId == skill.Id)) return 0;
+        int level = ctx.Character.Hints.FirstOrDefault(h => h.GroupId == skill.GroupId && h.Rarity == skill.Rarity)?.Level ?? 0;
+        int top = HintDiscount.Length - 1;
+        if (level >= top) return 0;
+        int gained = HintDiscount[Math.Min(top, level + levels)] - HintDiscount[Math.Max(0, level)];
+        var c = Score(skill, skill.BaseCost);
+        double share = c.Value > 0 && c.Fit >= 0.5 ? c.Fit : OffFitHintShare;
+        return gained / 100.0 * skill.BaseCost * ValueModel.SkillPointValue * share;
+    }
+
     /// <summary>A recovery skill's expected HP in one race, as a share of max HP.</summary>
     public sealed record Recovery(SkillInfo Skill, double Fraction, bool Owned);
 

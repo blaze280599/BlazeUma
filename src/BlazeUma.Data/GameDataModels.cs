@@ -77,6 +77,15 @@ public sealed record SkillInfo(
 public sealed record SupportCardInfo(int Id, string Name, int CharaId, int Type, int TrainingCommandId);
 
 /// <summary>
+/// What a support card's training hint can give (single_mode_hint_gain): one option at random, either a hint
+/// level for one of its skills or one of its stat bonuses (param id → amount, ParamIds numbering).
+/// </summary>
+public sealed record SupportCardHints(IReadOnlyList<int> SkillIds, IReadOnlyList<IReadOnlyDictionary<int, int>> StatBonuses)
+{
+    public int Options => SkillIds.Count + StatBonuses.Count;
+}
+
+/// <summary>
 /// A support card's effects at its level (support_card_effect_table plus a unique effect once its level is
 /// reached). Values are percentages / weights as shown in game.
 /// </summary>
@@ -105,6 +114,8 @@ public interface IGameData
     /// max level of <paramref name="limitBreak"/> (0–4); at that max level when exp is unknown.
     /// </summary>
     SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak, int? exp = null);
+    /// <summary>The skills and stat bonuses a card's training hint picks from; null when the card has none listed.</summary>
+    SupportCardHints? SupportCardHints(int supportCardId);
     ConditionInfo? Condition(int conditionId);
     string? StoryTitle(int storyId);
     string? CharacterName(int charaId);

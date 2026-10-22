@@ -16,6 +16,15 @@ internal sealed class FakeGameData : IGameData
 
     public List<RaceProgram> TurnRaces { get; } = [];
 
+    /// <summary>Training hint lists by support card id; none by default, so partner hints use the flat value.</summary>
+    public Dictionary<int, SupportCardHints> CardHints { get; } = [];
+
+    public FakeGameData WithSkills(params SkillInfo[] skills)
+    {
+        foreach (var skill in skills) _skills[skill.Id] = skill;
+        return this;
+    }
+
     private readonly Dictionary<int, SkillInfo> _skills = new[]
     {
         new SkillInfo(200712, "Rosy Outlook", 1, 20071, 217, 160, "distance_type==3&phase_random==1&order<=3", 9),
@@ -58,6 +67,7 @@ internal sealed class FakeGameData : IGameData
         10002 => new SupportCardEffects(20, 15, 35),
         _ => null,
     };
+    public SupportCardHints? SupportCardHints(int supportCardId) => CardHints.GetValueOrDefault(supportCardId);
     public ConditionInfo? Condition(int conditionId) => conditionId switch
     {
         6 => new ConditionInfo(6, "Practice Poor", true),

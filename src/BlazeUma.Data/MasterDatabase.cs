@@ -164,6 +164,21 @@ public sealed class MasterDatabase : IGameData, IDisposable
                 r.GetInt32(1), r.GetInt32(2), r.GetInt32(3)),
             ("$id", supportCardId)).FirstOrDefault();
 
+    public SupportCardHints? SupportCardHints(int supportCardId)
+    {
+        // hint_gain_type 0: a skill hint (value_1 skill id, value_2 levels); 1: a stat bonus (value_1 param, value_2
+        // amount), its rows sharing one hint_group. Rows with a group_id are scenario special cases.
+        var rows = Query("""
+            select hint_group, hint_gain_type, hint_value_1, hint_value_2 from single_mode_hint_gain
+            where support_card_id = $id and group_id = 0 order by hint_group, id
+            """, r => (Group: r.GetInt32(0), Type: r.GetInt32(1), Value1: r.GetInt32(2), Value2: r.GetInt32(3)), ("$id", supportCardId));
+        if (rows.Count == 0) return null;
+        return new SupportCardHints(
+            rows.Where(r => r.Type == 0).Select(r => r.Value1).ToList(),
+            rows.Where(r => r.Type == 1).GroupBy(r => r.Group)
+                .Select(g => (IReadOnlyDictionary<int, int>)g.ToDictionary(r => r.Value1, r => r.Value2)).ToList());
+    }
+
     private const int EffectFriendshipBonus = 1, EffectSpecialtyPriority = 19;
 
     /// <summary>Levels of the effect table's columns after init (level 1): limit_lv5 … limit_lv50.</summary>

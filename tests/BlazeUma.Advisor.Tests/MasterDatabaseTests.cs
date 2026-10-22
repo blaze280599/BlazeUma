@@ -80,6 +80,18 @@ public sealed class MasterDatabaseTests : IDisposable
     }
 
     [Fact]
+    public void SupportCardHints_ListSkills_AndTheStatBonus()
+    {
+        if (_db is null) return;
+        var hints = _db.SupportCardHints(30028)!;   // [Fire at My Heels] Kitasan Black
+        Assert.Equal(8, hints.SkillIds.Count);
+        Assert.Equal("Corner Adept ○", _db.Skill(hints.SkillIds[0])!.Name);
+        Assert.Equal(new Dictionary<int, int> { [1] = 6, [3] = 2 }, Assert.Single(hints.StatBonuses));
+        Assert.Equal(9, hints.Options);
+        Assert.Null(_db.SupportCardHints(1));
+    }
+
+    [Fact]
     public void Text_Conditions_AndCalendar()
     {
         if (_db is null) return;

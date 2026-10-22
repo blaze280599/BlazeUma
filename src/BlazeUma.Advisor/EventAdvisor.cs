@@ -146,7 +146,9 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values, EventOdds
             3 => ($"fans +{e.Value0}", e.Value0 / 500.0),
             4 or 5 => ($"bond {Card(e.Value0)} +{e.Value1}", e.Value1 * 0.5),
             35 or 36 => ($"bond {Card(e.Value0)} -{e.Value1}", -e.Value1 * 0.5),
-            6 => ($"hint {ctx.Data.Skill(e.Value0)?.Name ?? e.Value0.ToString()} +{e.Value1}", e.Value1 * ValueModel.HintValue),
+            6 => ctx.Data.Skill(e.Value0) is { } hinted
+                ? ($"hint {hinted.Name} +{e.Value1}", new SkillAdvisor(ctx).HintWorth(hinted, e.Value1))
+                : ($"hint {e.Value0} +{e.Value1}", e.Value1 * ValueModel.HintValue),
             7 => ($"gain {ctx.Data.Skill(e.Value0)?.Name ?? e.Value0.ToString()}", 12),
             8 => ("chance of a random skill", 6),
             9 or 37 or 40 => ($"become {Cond(e.Value0)}", ctx.Character.Conditions.Contains(e.Value0) ? 0 : values.ConditionValue(e.Value0)),

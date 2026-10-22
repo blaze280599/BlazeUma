@@ -1,3 +1,4 @@
+using BlazeUma.Data;
 using BlazeUma.Memory.Game;
 
 namespace BlazeUma.Advisor;
@@ -56,13 +57,16 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
 
         double bonds = 0;
         var names = new List<string>();
+        var hints = new List<string>();
         foreach (var partner in command.Partners)
         {
-            var (value, label) = PartnerValue(partner, trainingId);
+            var (value, label, hint) = PartnerValue(partner, trainingId);
             bonds += value;
             names.Add(label);
+            if (hint is not null) hints.Add(hint);
         }
         if (names.Count > 0) reasons.Add($"with {string.Join(", ", names)} (+{bonds:0.0})");
+        reasons.AddRange(hints);
 
         // A failed training is taken not to count toward the facility's next level.
         var (facility, facilityReason) = values.FacilityProgress(trainingId);
@@ -84,11 +88,16 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
     /// Bond worth of training next to a partner. Stat cards (positions 1–6) build toward friendship trainings
     /// at 80 bond (<see cref="ValueModel.BondTrainingValue"/>); friend cards and scenario NPCs (ids above 100,
     /// e.g. Director Akikawa) never give friendship trainings, so they keep a flat estimate, NPCs at half. The
-    /// stat gains already include any partner bonus.
+    /// stat gains already include any partner bonus. A hint is valued by <see cref="CardHint"/>; its reason is
+    /// returned apart.
     /// </summary>
-    private (double Value, string Label) PartnerValue(TrainingPartner partner, int trainingId)
+    private (double Value, string Label, string? HintReason) PartnerValue(TrainingPartner partner, int trainingId)
     {
-        if (partner.Position == HappyMeekPosition) return HappyMeek(trainingId);
+        if (partner.Position == HappyMeekPosition)
+        {
+            var (meek, meekLabel) = HappyMeek(trainingId);
+            return (meek, meekLabel, null);
+        }
         var bond = ctx.Character.Bonds.FirstOrDefault(b => b.TargetId == partner.Position);
         int level = bond?.Value ?? 0;
         string name = bond is not null ? ctx.Data.CharacterName(bond.CharaId) ?? $"#{partner.Position}" : $"#{partner.Position}";
@@ -104,10 +113,34 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
             value += info is { TrainingCommandId: > 0 } && ctx.Data.SupportCardEffects(card!.SupportCardId, card.LimitBreak, card.Exp) is { } effects
                 ? values.BondTrainingValue(level, info.TrainingCommandId, effects)
                 : ValueModel.BondValuePerPartner * Math.Clamp(1 - ctx.Turn / 48.0, 0.2, 1) * (isCard ? 1 : 0.5);
-        if (partner.HasHint) value += ValueModel.HintValue;
+        string? hintReason = null;
+        if (partner.HasHint)
+        {
+            var hints = card is not null ? ctx.Data.SupportCardHints(card.SupportCardId) : null;
+            var (hint, likely) = hints is { Options: > 0 } ? CardHint(hints) : (ValueModel.HintValue, []);
+            value += hint;
+            string skills = likely.Count > 0 ? $"likely {string.Join(" / ", likely)}" : hints is { Options: > 0 } ? "nothing new" : "unknown skills";
+            hintReason = $"{name} hint: {skills} (+{hint:0.0})";
+        }
 
         string label = $"{name} {level}" + (friendship ? " friendship!" : "") + (partner.HasHint ? " hint" : "");
-        return (value, label);
+        return (value, label, hintReason);
+    }
+
+    /// <summary>
+    /// A training hint gives one of the card's options at random (GameTora: "one will be randomly granted"): a
+    /// level on one of its hint skills (<see cref="SkillAdvisor.HintWorth"/>) or one of its stat bonuses. Worth
+    /// the average; the reason names the best skills.
+    /// </summary>
+    private (double Value, IReadOnlyList<string> Likely) CardHint(SupportCardHints hints)
+    {
+        var skills = new SkillAdvisor(ctx);
+        var worths = hints.SkillIds.Select(ctx.Data.Skill).OfType<SkillInfo>()
+            .Select(s => (Skill: s, Worth: skills.HintWorth(s))).ToList();
+        double stats = hints.StatBonuses.Sum(bonus => bonus.Sum(b => values.Param(b.Key, b.Value)));
+        double value = (worths.Sum(w => w.Worth) + stats) / hints.Options;
+        var likely = worths.Where(w => w.Worth > 0).OrderByDescending(w => w.Worth).Take(2).Select(w => w.Skill.Name).ToList();
+        return (value, likely);
     }
 
     /// <summary>Happy Meek's partner position (chara 2001) on URA trainings since the July patch.</summary>

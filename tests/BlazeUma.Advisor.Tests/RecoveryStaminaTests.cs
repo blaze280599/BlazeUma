@@ -29,6 +29,7 @@ internal sealed class RecoveryData(params RaceProgram[] races) : IGameData
     public SupportCardInfo? SupportCard(int supportCardId) => _inner.SupportCard(supportCardId);
     public SupportCardEffects? SupportCardEffects(int supportCardId, int limitBreak, int? exp = null) =>
         _inner.SupportCardEffects(supportCardId, limitBreak, exp);
+    public SupportCardHints? SupportCardHints(int supportCardId) => _inner.SupportCardHints(supportCardId);
     public ConditionInfo? Condition(int conditionId) => _inner.Condition(conditionId);
     public string? StoryTitle(int storyId) => _inner.StoryTitle(storyId);
     public string? CharacterName(int charaId) => _inner.CharacterName(charaId);
