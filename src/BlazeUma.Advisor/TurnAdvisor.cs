@@ -138,7 +138,8 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
     private ScoredOption Rest()
     {
         double v = RestOutcomes.Sum(o => o.Chance * values.Energy(o.Energy));
-        double nightOwl = RestOutcomes.Where(o => o.NightOwl).Sum(o => o.Chance) * ValueModel.BadConditionValue;
+        double nightOwl = ctx.Character.Conditions.Contains(ConditionIds.NightOwl) ? 0
+            : RestOutcomes.Where(o => o.NightOwl).Sum(o => o.Chance) * -values.ConditionValue(ConditionIds.NightOwl);
         var reasons = new List<string>
         {
             $"energy {ctx.Character.Energy} +70 / +50 / +30 (25% / 62.5% / 12.5%) ({v:+0.0})",
@@ -171,15 +172,19 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
     private ScoredOption RestAndRecreation()
     {
         double energy = values.Energy(40), mood = values.Mood(1);
-        var bad = ctx.Character.Conditions.Select(ctx.Data.Condition).Where(c => c is { IsBad: true }).ToList();
+        var bad = values.BadConditions;
+        double cure = bad.Sum(values.CureValue);
         var reasons = new List<string>
         {
             $"summer camp Rest & Recreation: energy {ctx.Character.Energy} +40 ({energy:+0.0})",
             $"mood {ctx.Character.Mood} +1 ({mood:+0.0})",
         };
-        if (bad.Count > 0) reasons.Add($"cures {string.Join(", ", bad.Select(c => c!.Name))} (+{25 * bad.Count})");
-        return new ScoredOption(RestAndRecreationLabel, energy + mood + 25 * bad.Count, reasons);
+        if (bad.Count > 0) reasons.Add($"cures {ConditionNames(bad)} (+{cure:0.0})");
+        return new ScoredOption(RestAndRecreationLabel, energy + mood + cure, reasons);
     }
+
+    private string ConditionNames(IEnumerable<int> conditions) =>
+        string.Join(", ", conditions.Select(c => ctx.Data.Condition(c)?.Name ?? $"condition {c}"));
 
     /// <summary>Rest outcomes measured by umareference.com (percentages-of-events): energy, and the Night Owl chance.</summary>
     private static readonly (double Chance, int Energy, bool NightOwl)[] RestOutcomes =
@@ -220,11 +225,18 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         }
     }
 
+    /// <summary>
+    /// Cures each bad condition <see cref="ValueModel.InfirmaryCureChance"/> of the time; a cure is worth the turns
+    /// the condition would otherwise last (<see cref="ValueModel.ConditionValue"/>), so little near the career's
+    /// end or just before a summer camp Rest &amp; Recreation.
+    /// </summary>
     private ScoredOption Infirmary()
     {
-        var bad = ctx.Character.Conditions.Select(ctx.Data.Condition).Where(c => c is { IsBad: true }).ToList();
-        double score = 25 * bad.Count + values.Energy(20);
-        return new ScoredOption("Infirmary", score, [$"cures {string.Join(", ", bad.Select(c => c!.Name))}"]);
+        var bad = values.BadConditions;
+        double cure = ValueModel.InfirmaryCureChance * bad.Sum(values.CureValue);
+        double score = cure + values.Energy(20);
+        return new ScoredOption("Infirmary", score,
+            [$"cures {ConditionNames(bad)} ({ValueModel.InfirmaryCureChance:P0}, +{cure:0.0})"]);
     }
 
     public static int ParamNameToId(string name) => name switch

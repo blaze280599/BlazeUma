@@ -124,7 +124,7 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         if (nth < 3) return 0;
         double chance = StreakEventChance[Math.Min(nth, StreakEventChance.Length - 1)];
         double loss = StreakStatLoss * values.AverageStatWeight
-            + 0.5 * Math.Abs(values.Mood(-1)) + 0.5 * ValueModel.BadConditionValue;
+            + 0.5 * Math.Abs(values.Mood(-1)) + 0.5 * -values.ConditionValue(ConditionIds.SkinOutbreak);
         double penalty = chance * loss;
         reason = $"race {nth} in a row: {chance:P0} chance of an event taking -10 from 3 stats and mood or Skin Outbreak (-{penalty:0.0})";
         return penalty;

@@ -63,7 +63,7 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values, EventOdds
         return options.OrderByDescending(o => o.Score).ToList();
     }
 
-    private const int ExtraTraining = 715, SlowMetabolism = 4;
+    private const int ExtraTraining = 715;
 
     /// <summary>
     /// Hidden chances the preview does not show (umareference.com percentages-of-events): a +30 energy option
@@ -76,17 +76,20 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values, EventOdds
             e.Value0 == ParamIds.Energy && (amount > 0 ? e.DisplayId is 1 or 39 && e.Value1 == amount : e.DisplayId is 2 or 38 && e.Value1 == -amount);
         var effects = choice.Outcomes.SelectMany(o => o).ToList();
         double value = 0;
-        if (effects.Any(e => Energy(e, 30)) && !effects.Any(e => e.DisplayId is 9 or 37 or 40 && e.Value0 == SlowMetabolism))
+        if (effects.Any(e => Energy(e, 30)) && !effects.Any(e => e.DisplayId is 9 or 37 or 40 && e.Value0 == ConditionIds.SlowMetabolism)
+            && !ctx.Character.Conditions.Contains(ConditionIds.SlowMetabolism))
         {
-            value -= 0.1 * ValueModel.BadConditionValue;
-            reasons.Add($"+30 energy: 10% Slow Metabolism (-{0.1 * ValueModel.BadConditionValue:0.0})");
+            double risk = 0.1 * -values.ConditionValue(ConditionIds.SlowMetabolism);
+            value -= risk;
+            reasons.Add($"+30 energy: 10% Slow Metabolism (-{risk:0.0})");
         }
         bool extraTraining = story is { StoryId: var id } && id / 1_000_000 == 501 && id % 1000 == ExtraTraining;
-        if (extraTraining && choice.Outcomes.Count > 0 && choice.Outcomes[0].Any(e => Energy(e, -5))
-            && ctx.Character.Conditions.Select(ctx.Data.Condition).Any(c => c is { IsBad: true }))
+        if (extraTraining && choice.Outcomes.Count > 0 && choice.Outcomes[0].Any(e => Energy(e, -5)) && values.BadConditions.Count > 0)
         {
-            value += 0.2 * ValueModel.BadConditionValue;
-            reasons.Add($"20% chance to cure a bad condition (+{0.2 * ValueModel.BadConditionValue:0.0})");
+            // "a bad condition": the mean of the trainee's.
+            double cure = 0.2 * values.BadConditions.Average(values.CureValue);
+            value += cure;
+            reasons.Add($"20% chance to cure a bad condition (+{cure:0.0})");
         }
         return value;
     }
@@ -146,14 +149,14 @@ public sealed class EventAdvisor(CareerContext ctx, ValueModel values, EventOdds
             6 => ($"hint {ctx.Data.Skill(e.Value0)?.Name ?? e.Value0.ToString()} +{e.Value1}", e.Value1 * ValueModel.HintValue),
             7 => ($"gain {ctx.Data.Skill(e.Value0)?.Name ?? e.Value0.ToString()}", 12),
             8 => ("chance of a random skill", 6),
-            9 or 37 or 40 => ($"become {Cond(e.Value0)}", ctx.Data.Condition(e.Value0) is { IsBad: true } ? -15 : 15),
-            10 => ($"cures {Cond(e.Value0)}", 15),
+            9 or 37 or 40 => ($"become {Cond(e.Value0)}", ctx.Character.Conditions.Contains(e.Value0) ? 0 : values.ConditionValue(e.Value0)),
+            10 => ($"cures {Cond(e.Value0)}", values.CureValue(e.Value0)),
             11 => ($"unlock recreation with {Card(e.Value0)}", 6),
             13 => ($"all stats +{e.Value0}", e.Value0 * 5 * values.AverageStatWeight),
             14 => ($"{e.Value0} random stat(s) +{e.Value1}", e.Value0 * e.Value1 * values.AverageStatWeight),
             34 => ($"{e.Value0} random stat(s) -{e.Value1}", -e.Value0 * e.Value1 * values.AverageStatWeight),
-            15 => ("cures all bad conditions", 15),
-            16 => ($"cures {e.Value0} bad condition(s)", 10 * e.Value0),
+            15 => ("cures all bad conditions", values.BadConditions.Sum(values.CureValue)),
+            16 => ($"cures {e.Value0} bad condition(s)", values.BadConditions.Select(values.CureValue).OrderDescending().Take(e.Value0).Sum()),
             17 => ("restricts a training", -15),
             18 => ("restricts race entry", -10),
             19 => ($"last trained stat +{e.Value0}", e.Value0 * lastWeight),

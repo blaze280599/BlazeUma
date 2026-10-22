@@ -21,7 +21,7 @@ public sealed class ValueModel
     };
 
     public const double SkillPointValue = 0.35;
-    /// <summary>Gaining a general bad condition (Night Owl, Slow Metabolism …); the same 15 events use for "become X".</summary>
+    /// <summary>A condition <see cref="ConditionValue"/> has no effect for (character and scenario ones), good or bad.</summary>
     public const double BadConditionValue = 15;
     public const double BondValuePerPartner = 3;
     public const double HintValue = 4;
@@ -482,4 +482,131 @@ public sealed class ValueModel
 
     /// <summary>What a failed training costs on top of losing its gains: stat −5, mood −1, chance of Practice Poor.</summary>
     public double FailureLoss => 5 * AverageStatWeight + Math.Abs(Mood(-1)) + 4;
+
+    /// <summary>
+    /// Turns a bad condition lasts before the trainee would next rest anyway and can take the infirmary instead
+    /// (estimate; the logged careers rest about one turn in six).
+    /// </summary>
+    public const int CureWaitTurns = 3;
+    /// <summary>Slow Metabolism also goes away by chance on a stat training (uma.guide), so it lasts less (estimate).</summary>
+    public const int SlowMetabolismTurns = 3;
+    /// <summary>The infirmary cures ~85% of the time (GameWith Global sample; Practice Poor and Night Owl alike).</summary>
+    public const double InfirmaryCureChance = 0.85;
+    /// <summary>Energy from an average rest (<see cref="TurnAdvisor"/>'s rest outcomes) and from the infirmary.</summary>
+    private const int RestEnergy = 50, InfirmaryEnergy = 20;
+    /// <summary>
+    /// Share of trainings whose failure chance is above 0. The game shows 0% at high energy and a lower chance
+    /// can't go below it, so Practice Perfect and the like only help on these; Practice Poor's +2% shows even at
+    /// full energy (estimate).
+    /// </summary>
+    public const double RiskyTrainingShare = 0.3;
+    /// <summary>Night Owl and Skin Outbreak fire "by chance" each turn; no source gives the rate (estimate).</summary>
+    public const double ConditionTriggerChance = 0.1;
+    /// <summary>Mood levels a turn gains from events and outings, which Migraine blocks (estimate).</summary>
+    public const double MoodGainsPerTurn = 0.1;
+    /// <summary>Chance Slacker skips a training; the game says only "may not show up to training" (estimate).</summary>
+    public const double SlackerSkipChance = 0.1;
+    /// <summary>Share of a typical training's gains that is Speed: the Speed training's main stat, Guts' and Wit's second.</summary>
+    public const double SpeedShareOfTraining = 0.3;
+    /// <summary>Skill points a turn brings from trainings, races and events, which Fast Learner's discount stretches (estimate).</summary>
+    public const double SkillPointsPerTurn = 15;
+    /// <summary>Partners on a typical training, each getting Charming's extra bond.</summary>
+    public const double PartnersPerTraining = 2;
+
+    /// <summary>A typical training's stats, skill points and bonds: what a failure or a skipped training loses.</summary>
+    private double TrainingValue(int turn) => TrainingStatGain(_ctx) * AverageStatWeight + 5 * SkillPointValue
+        + PartnersPerTraining * BondValuePerPartner * Math.Clamp(1 - turn / 48.0, 0.2, 1);
+
+    /// <summary>Conditions with an effect modelled in <see cref="ConditionTurnValue"/>, and whether each is bad.</summary>
+    private static readonly IReadOnlyDictionary<int, bool> ModelledConditions = new Dictionary<int, bool>
+    {
+        [ConditionIds.NightOwl] = true, [ConditionIds.Slacker] = true, [ConditionIds.SkinOutbreak] = true,
+        [ConditionIds.SlowMetabolism] = true, [ConditionIds.Migraine] = true, [ConditionIds.PracticePoor] = true,
+        [ConditionIds.UnderTheWeather] = true,
+        [ConditionIds.FastLearner] = false, [ConditionIds.Charming] = false, [ConditionIds.HotTopic] = false,
+        [ConditionIds.PracticePerfect] = false, [ConditionIds.PracticePerfectGreat] = false, [ConditionIds.ShiningBrightly] = false,
+    };
+
+    public bool IsBadCondition(int conditionId) =>
+        ModelledConditions.TryGetValue(conditionId, out bool bad) ? bad : _ctx.Data.Condition(conditionId) is { IsBad: true };
+
+    /// <summary>The trainee's bad conditions, the ones the infirmary and Rest &amp; Recreation cure.</summary>
+    public IReadOnlyList<int> BadConditions => [.. _ctx.Character.Conditions.Where(IsBadCondition)];
+
+    /// <summary>
+    /// What curing a bad condition at the infirmary costs: a turn the trainee would rest anyway gives
+    /// <see cref="InfirmaryEnergy"/> instead of <see cref="RestEnergy"/> (from 30 energy), retried until it works.
+    /// </summary>
+    private double InfirmaryVisitCost => Energy(RestEnergy - InfirmaryEnergy, from: 30) / InfirmaryCureChance;
+
+    /// <summary>
+    /// Value of having a condition from the next turn on: below 0 for a bad one, above 0 for a good one, summed
+    /// from its effect on each turn (<see cref="ConditionTurnValue"/>). A bad one lasts until summer camp's
+    /// Rest &amp; Recreation cures it or the career ends (uma.guide: general bad conditions don't wear off), unless
+    /// curing it costs less: <see cref="CureWaitTurns"/> turns of it and an <see cref="InfirmaryVisitCost"/>. So
+    /// it costs little late in the career or just before camp. Slow Metabolism lasts at most
+    /// <see cref="SlowMetabolismTurns"/>. A good one lasts to the end (umamusu.wiki Game:Conditions: good
+    /// conditions are not removed). Ids without an effect here (character and scenario conditions) are worth
+    /// ±<see cref="BadConditionValue"/>.
+    /// </summary>
+    public double ConditionValue(int conditionId)
+    {
+        if (!ModelledConditions.TryGetValue(conditionId, out bool bad))
+            return IsBadCondition(conditionId) ? -BadConditionValue : BadConditionValue;
+        int lasts = conditionId == ConditionIds.SlowMetabolism ? SlowMetabolismTurns : CareerContext.FinalTurn;
+        double value = conditionId == ConditionIds.FastLearner ? 0.1 * _ctx.Character.SkillPoints * SkillPointValue : 0;
+        double waiting = 0;
+        for (int t = _ctx.Turn + 1; t <= Math.Min(CareerContext.FinalTurn, _ctx.Turn + lasts); t++)
+        {
+            value += ConditionTurnValue(conditionId, t);
+            if (t == _ctx.Turn + CureWaitTurns) waiting = value;
+            if (bad && _ctx.IsSummerCamp(t)) break;
+        }
+        return bad && conditionId != ConditionIds.SlowMetabolism ? Math.Max(value, waiting - InfirmaryVisitCost) : value;
+    }
+
+    /// <summary>Worth of curing a condition the trainee has: what it would cost if left (0 for a good one).</summary>
+    public double CureValue(int conditionId) => IsBadCondition(conditionId) ? Math.Max(0, -ConditionValue(conditionId)) : 0;
+
+    /// <summary>
+    /// One turn of a condition. Effects are the game's own lines (text 143) with uma.guide's Career Mechanics and
+    /// umamusu.wiki's Game:Conditions for the numbers: Night Owl −10 energy or −1 mood by chance; Skin Outbreak
+    /// −1 mood by chance; Migraine no mood gains; Slow Metabolism no Speed from training; Slacker may skip a
+    /// training; Practice Poor +2% and Under the Weather +5% failure; Practice Perfect ○ −2%, ◎ −4% and Shining
+    /// Brightly −5% failure (on <see cref="RiskyTrainingShare"/> of trainings); Charming +2 bond with each partner a
+    /// training; Hot Topic +40% bond with Akikawa and Etsuko; Fast Learner skills 10% cheaper. A goal race turn
+    /// has no training.
+    /// </summary>
+    private double ConditionTurnValue(int conditionId, int turn)
+    {
+        double trainings = _ctx.IsGoalTurn(turn) ? 0 : TrainingTurnShare;
+        double Failure(double rate) => trainings * rate * (TrainingValue(turn) + FailureLoss) * (rate > 0 ? 1 : -RiskyTrainingShare);
+        double bondDecay = Math.Clamp(1 - turn / 48.0, 0.2, 1);
+        return conditionId switch
+        {
+            ConditionIds.NightOwl => -ConditionTriggerChance * (0.5 * Math.Abs(Energy(-10)) + 0.5 * Math.Abs(Mood(-1))),
+            ConditionIds.SkinOutbreak => -ConditionTriggerChance * Math.Abs(Mood(-1)),
+            ConditionIds.Migraine => -MoodGainsPerTurn * Mood(1),
+            ConditionIds.SlowMetabolism => -trainings * TrainingStatGain(_ctx) * SpeedShareOfTraining * Weight(ParamIds.Speed),
+            ConditionIds.Slacker => -trainings * SlackerSkipChance * TrainingValue(turn),
+            ConditionIds.PracticePoor => -Failure(0.02),
+            ConditionIds.UnderTheWeather => -Failure(0.05),
+            ConditionIds.PracticePerfect => Failure(-0.02),
+            ConditionIds.PracticePerfectGreat => Failure(-0.04),
+            ConditionIds.ShiningBrightly => Failure(-0.05),
+            ConditionIds.Charming => trainings * PartnersPerTraining * 2.0 / BondPerTraining * BondValuePerPartner * bondDecay,
+            // Akikawa or Etsuko is on ~1 training in 4; their bonds count half a card's (TurnAdvisor).
+            ConditionIds.HotTopic => trainings * 0.25 * 0.4 * BondValuePerPartner * 0.5 * bondDecay,
+            ConditionIds.FastLearner => 0.1 * SkillPointsPerTurn * SkillPointValue,
+            _ => 0,
+        };
+    }
+}
+
+/// <summary>Trainee conditions (single_mode_chara_effect; names are text 142, the game's effect lines text 143).</summary>
+public static class ConditionIds
+{
+    public const int NightOwl = 1, Slacker = 2, SkinOutbreak = 3, SlowMetabolism = 4, Migraine = 5, PracticePoor = 6,
+        FastLearner = 7, Charming = 8, HotTopic = 9, PracticePerfect = 10, PracticePerfectGreat = 11,
+        UnderTheWeather = 12, ShiningBrightly = 13;
 }
