@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using BlazeUma.Memory.Game;
 
 namespace BlazeUma.Advisor;
@@ -19,7 +21,15 @@ public sealed record TurnOutcome(
 public sealed record LogRecord(
     string Kind, int Turn, DateTimeOffset At, string Summary,
     IReadOnlyList<ScoredOption> Options, CareerSnapshot Snapshot, TurnOutcome? Outcome, int? StoryId,
-    EventResult? Result = null);
+    EventResult? Result = null)
+{
+    /// <summary>How log lines are written and read back: nulls left out, enums by name.</summary>
+    public static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter() },
+    };
+}
 
 /// <summary>
 /// What an event with choices did: the change from its choice screen to the next screen after it, and the

@@ -30,7 +30,7 @@ dotnet publish src/BlazeUma.Cli -c Release    # publish/BlazeUma.exe (self-conta
 dotnet test BlazeUma.slnx
 ```
 
-The app takes no command-line arguments. It opens on a main menu:
+Without arguments it opens on a main menu:
 
 1. **Advisor**: you play; BlazeUma reads the game once a second and shows the recommended action.
    It waits for the game and reconnects after restarts. Esc goes back to the menu, V shows the reasons for
@@ -66,6 +66,18 @@ Advisor mode appends to `logs/career-<cardId>-<time>.jsonl` next to the exe. Eac
 and the measured outcome at the start of the next turn (stat/energy/mood/SP/fan/bond changes,
 conditions, skills learned, and a best-guess action such as `training:101`, `outing:9008`, `race`,
 `rest`). Each event shown writes an `event` record. The log is what the estimates get tuned from.
+
+### Replay
+
+`replay` re-runs the current advisor on logged snapshots, to see which picks a change flips. No game needed;
+game data comes from the `master.mdb` copy in `%LOCALAPPDATA%\BlazeUma` (or `--db <path>`).
+
+```powershell
+.\publish\BlazeUma.exe replay logs publish\logs          # one row per turn/event; FLIP marks a changed pick
+.\publish\BlazeUma.exe replay logs\career-....jsonl --all  # also the top 3 options with scores, old vs new
+```
+
+It ends with counts of records replayed, flips, and records that could not be read or advised (with the reason).
 
 ## In-game agent (automation, in progress)
 

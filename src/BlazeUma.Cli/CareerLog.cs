@@ -10,11 +10,7 @@ internal sealed class CareerLog(string directory, JsonSerializerOptions json)
     private readonly TurnRecorder _recorder = new();
 
     /// <summary>The log in logs/ next to the exe, written as Advisor mode writes it.</summary>
-    public static CareerLog Create() => new(Path.Combine(AppContext.BaseDirectory, "logs"), new JsonSerializerOptions
-    {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
-    });
+    public static CareerLog Create() => new(Path.Combine(AppContext.BaseDirectory, "logs"), LogRecord.JsonOptions);
 
     public string? CurrentPath { get; private set; }
 
