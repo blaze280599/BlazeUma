@@ -163,7 +163,8 @@ public class AdvisorTests
             Snapshots.Train(TrainingIds.Stamina, 0, -19, ("stamina", 12), ("guts", 8), ("skillPoints", 4)),
             Snapshots.Simple(CommandType.Race, 401),
         };
-        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(fans: 800, mood: Mood.Great), turn: 26, commands: commands));
+        var stats = new Stats(300, 150, 175, 230, 160);   // the logged trainee's stats on this turn
+        var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(fans: 800, mood: Mood.Great, stats: stats), turn: 26, commands: commands));
         Assert.Equal("Race: Wakagoma Stakes", advice.Best!.Label);
         Assert.Contains(advice.Notes, n => n.Label == "Warning" && n.Text.Contains("950"));
     }
