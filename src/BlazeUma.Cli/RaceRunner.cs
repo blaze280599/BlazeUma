@@ -37,6 +37,8 @@ internal static class RaceRunner
     /// <summary>Ordered: earlier rules win when several buttons are on screen.</summary>
     private static readonly Rule[] Rules =
     [
+        // View Results plays the placing cut-in ("4th", TAP) over the paddock, whose buttons stay active under it.
+        new("Gallop.SingleModePaddockViewController", "Controller._cutinParent._tapButton", "Tap through the placing", Repeat: true),
         new("Gallop.SingleModePaddockViewController", "View.PaddockContentsHolder._raceSkipButton", "View Results (skip watching the race)"),
         // View Results is locked until a race has been watched once; then the race is run and skipped in-race.
         new("Gallop.SingleModePaddockViewController", "View.PaddockContentsHolder._raceStartButtonRight", "Race (View Results is locked)"),
