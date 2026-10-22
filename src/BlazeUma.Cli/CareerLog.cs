@@ -43,8 +43,26 @@ internal sealed class CareerLog(string directory, JsonSerializerOptions json)
         }
         if (CurrentPath is null || records.Count == 0) return;
         Directory.CreateDirectory(directory);
-        File.AppendAllLines(CurrentPath, records.Select(r => JsonSerializer.Serialize(r, json)));
+        var lines = records.Select(r => JsonSerializer.Serialize(r, json)).ToList();
+        // Another program reading the log (a replay, an editor) can hold it for a moment; wait rather than stop the bot.
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(CurrentPath, FileMode.Append, FileAccess.Write, FileShare.Read);
+                using var writer = new StreamWriter(stream);
+                foreach (string line in lines) writer.WriteLine(line);
+                return;
+            }
+            catch (IOException) when (attempt < WriteAttempts)
+            {
+                Thread.Sleep(WriteRetryDelay);
+            }
+        }
     }
+
+    private const int WriteAttempts = 20;
+    private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(250);
 
     private void Open(CareerSnapshot snapshot)
     {

@@ -44,7 +44,7 @@ public static class Replay
             string name = Path.GetFileName(file);
             var raceTurns = CareerLogs.RaceTurns(file);
             int line = 0;
-            foreach (string text in File.ReadLines(file))
+            foreach (string text in CareerLogs.Lines(file))
             {
                 line++;
                 if (string.IsNullOrWhiteSpace(text)) continue;

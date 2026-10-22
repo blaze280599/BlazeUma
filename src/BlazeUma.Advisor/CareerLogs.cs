@@ -68,7 +68,7 @@ public static class CareerLogs
         var odds = new EventOdds();
         int results = 0, ambiguous = 0, unreadable = 0;
         foreach (string file in files)
-            foreach (string text in File.ReadLines(file))
+            foreach (string text in Lines(file))
             {
                 if (string.IsNullOrWhiteSpace(text)) continue;
                 LogRecord? record;
@@ -94,9 +94,20 @@ public static class CareerLogs
             : (EventOdds.Default, "event odds: no logged results yet, using the shipped file");
     }
 
+    /// <summary>
+    /// A log's lines, read without blocking the bot that may be appending to it (File.ReadLines shares the file
+    /// for reading only, so a running bot's next write failed while a replay read it).
+    /// </summary>
+    public static IEnumerable<string> Lines(string file)
+    {
+        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        while (reader.ReadLine() is { } line) yield return line;
+    }
+
     private static IEnumerable<LogRecord> Read(string file)
     {
-        foreach (string text in File.ReadLines(file))
+        foreach (string text in Lines(file))
         {
             if (string.IsNullOrWhiteSpace(text)) continue;
             LogRecord? record;
