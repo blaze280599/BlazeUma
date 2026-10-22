@@ -38,6 +38,9 @@ internal sealed class FakeGameData : IGameData
     /// <summary>URA calendar: 24 half-months per year from Junior Early January (summer camp = turns 37–40, 61–64).</summary>
     public TurnDate Turn(int turn) => new(turn, (turn - 1) / 24 + 1, (turn - 1) % 24 / 2 + 1, (turn - 1) % 2 + 1);
 
+    /// <summary>Goals added to Daiwa's (fan goals and the like).</summary>
+    public List<GoalRace> ExtraGoals { get; } = [];
+
     public IReadOnlyList<GoalRace> Goals(IReadOnlyList<int> routeRaceIds) =>
     [
         new GoalRace(22, 1, 12, 0, Debut.Name, Debut),
@@ -46,6 +49,7 @@ internal sealed class FakeGameData : IGameData
         new GoalRace(29, 8, 68, 1, TennoShoAutumn.Name, TennoShoAutumn),
         new GoalRace(30, 9, 72, 1, ArimaKinen.Name, ArimaKinen),
         new GoalRace(31, 10, 74, 1, "URA Finale Qualifier", null),
+        .. ExtraGoals,
     ];
 
     public RaceProgram? Program(int programId) =>

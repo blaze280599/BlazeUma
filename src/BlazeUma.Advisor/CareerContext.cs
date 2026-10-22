@@ -14,8 +14,13 @@ public sealed class CareerContext
     public int Turn { get; }
     public TurnDate Date { get; }
 
-    /// <summary>One goal per goal slot; where the route offers alternatives (Oaks / Derby) the first is used.</summary>
+    /// <summary>
+    /// One race goal per goal slot; where the route offers alternatives (Oaks / Derby) the first is used. Goals that
+    /// aren't races ("Earn 5000 fans") are left out: see <see cref="FanGoals"/>.
+    /// </summary>
     public IReadOnlyList<GoalRace> Goals { get; }
+    /// <summary>"Earn N fans by turn T" goals (<see cref="GoalKind.Fans"/>).</summary>
+    public IReadOnlyList<GoalRace> FanGoals { get; }
     public IReadOnlyList<GoalRace> RemainingGoals { get; }
     public GoalRace? NextGoal => RemainingGoals.FirstOrDefault();
     public GoalRace? GoalToday => NextGoal is { } g && g.Turn == Turn ? g : null;
@@ -47,7 +52,9 @@ public sealed class CareerContext
         Turn = snapshot.Turn ?? throw new ArgumentException("Snapshot has no turn.", nameof(snapshot));
         Data = data;
         Date = data.Turn(Turn);
-        Goals = data.Goals(Character.RouteRaceIds).GroupBy(g => g.SortId).Select(g => g.First()).OrderBy(g => g.Turn).ToList();
+        var goals = data.Goals(Character.RouteRaceIds).GroupBy(g => g.SortId).Select(g => g.First()).OrderBy(g => g.Turn).ToList();
+        Goals = goals.Where(g => g.Kind == GoalKind.Race).ToList();
+        FanGoals = goals.Where(g => g.Kind == GoalKind.Fans).ToList();
         RemainingGoals = Goals.Where(g => g.Turn >= Turn).ToList();
 
         var withRace = RemainingGoals.Where(g => g.Race is not null).ToList();
@@ -63,12 +70,15 @@ public sealed class CareerContext
         LongestRemainingDistance = withRace.Count > 0 ? withRace.Max(g => g.Race!.Distance) : 2000;
     }
 
-    /// <summary>First remaining goal whose fan requirement is not met yet, with the shortfall.</summary>
+    /// <summary>
+    /// First remaining goal whose fan requirement is not met yet, with the shortfall: a goal race's entry requirement
+    /// or a fan goal's target.
+    /// </summary>
     public (GoalRace Goal, int Shortfall)? FanShortfall()
     {
-        foreach (var goal in RemainingGoals)
+        foreach (var goal in RemainingGoals.Concat(FanGoals.Where(g => g.Turn >= Turn)).OrderBy(g => g.Turn))
         {
-            int need = goal.Race?.NeedFans ?? 0;
+            int need = goal.Kind == GoalKind.Fans ? goal.Fans : goal.Race?.NeedFans ?? 0;
             if (need > Character.Fans) return (goal, need - Character.Fans);
         }
         return null;

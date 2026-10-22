@@ -119,11 +119,19 @@ public sealed class MasterDatabase : IGameData, IDisposable
         var goals = new List<GoalRace>();
         foreach (int id in routeRaceIds)
         {
-            var rows = Query("select sort_id, turn, condition_id, condition_value_1, target_type from single_mode_route_race where id = $id",
-                r => (Sort: r.GetInt32(0), Turn: r.GetInt32(1), Condition: r.GetInt32(2), Place: r.GetInt32(3), Target: r.GetInt32(4)),
+            var rows = Query("select sort_id, turn, condition_id, condition_value_1, target_type, condition_type from single_mode_route_race where id = $id",
+                r => (Sort: r.GetInt32(0), Turn: r.GetInt32(1), Condition: r.GetInt32(2), Place: r.GetInt32(3), Target: r.GetInt32(4), Type: r.GetInt32(5)),
                 ("$id", id));
             if (rows.Count == 0) continue;
             var row = rows[0];
+            if (row.Type != 1)
+            {
+                // condition_value_1 is the fan target here, not a place ("Earn 5000 fans", seen live as "need top 5000").
+                goals.Add(row.Type == 3
+                    ? new GoalRace(id, row.Sort, row.Turn, 0, $"Earn {row.Place} fans", null, GoalKind.Fans, row.Place)
+                    : new GoalRace(id, row.Sort, row.Turn, 0, $"Goal (type {row.Type})", null, GoalKind.Other));
+                continue;
+            }
             var program = Program(row.Condition);
             string name = program?.Name ?? row.Condition switch
             {

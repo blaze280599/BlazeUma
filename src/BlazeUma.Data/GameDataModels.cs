@@ -59,8 +59,19 @@ public sealed record RaceProgram(
     public string GradeName => Enum.IsDefined(typeof(RaceGrade), Grade) ? ((RaceGrade)Grade).ToString() : $"grade{Grade}";
 }
 
-/// <summary>A career goal from single_mode_route_race. Race is null for scenario finals with no fixed program.</summary>
-public sealed record GoalRace(int RouteRaceId, int SortId, int Turn, int RequiredPlace, string Name, RaceProgram? Race)
+/// <summary>
+/// single_mode_route_race.condition_type: 1 a race (condition_id is the program, or 10001–10003 for the URA Finale),
+/// 3 earn condition_value_1 fans by the goal's turn; the rest (2 placings in a grade's races, 7, 8, 9) aren't
+/// handled yet and are kept as Other.
+/// </summary>
+public enum GoalKind { Race, Fans, Other }
+
+/// <summary>
+/// A career goal from single_mode_route_race. Race is null for scenario finals with no fixed program and for goals
+/// that aren't races (<see cref="Kind"/>); Fans is a fan goal's target.
+/// </summary>
+public sealed record GoalRace(int RouteRaceId, int SortId, int Turn, int RequiredPlace, string Name, RaceProgram? Race,
+    GoalKind Kind = GoalKind.Race, int Fans = 0)
 {
     public bool MustWin => RequiredPlace == 1;
 }

@@ -49,17 +49,17 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
             notes.Add(fromGoals >= shortfall
                 ? new Note("Fans", $"{shortfall} more needed for {fanGoal.Name} (turn {fanGoal.Turn}); earlier goal races should cover it (~+{fromGoals})")
                 : new Note(fanGoal.Turn - ctx.Turn <= 4 ? "Warning" : "Fans",
-                    $"{shortfall} more fans needed to enter {fanGoal.Name} (turn {fanGoal.Turn}); missing it fails the goal"));
+                    fanGoal.Kind == GoalKind.Fans
+                        ? $"{shortfall} more fans needed by turn {fanGoal.Turn} ({fanGoal.Name}); missing it fails the goal"
+                        : $"{shortfall} more fans needed to enter {fanGoal.Name} (turn {fanGoal.Turn}); missing it fails the goal"));
         }
         var details = new List<string>
         {
             $"stat weights Spd {w[ParamIds.Speed]:0.00}  Sta {w[ParamIds.Stamina]:0.00}  Pow {w[ParamIds.Power]:0.00}  Gut {w[ParamIds.Guts]:0.00}  Wit {w[ParamIds.Wit]:0.00}",
         };
 
-        if (snapshot.Screen?.ViewController == SkillScreen && snapshot.SkillShop is { } shop)
-            return SkillShopAdvice(ctx, header, shop, notes, details);
-        if (snapshot.Screen?.ViewController == RaceScreen && snapshot.RaceList is { } races)
-            return RaceListAdvice(ctx, values, header, races, notes, details);
+        // An event plays over whatever screen is open (a card event popped up over the race list on turn 23), so
+        // it comes before the screen checks.
         if (snapshot.Story is { LooksActive: true } story)
         {
             string title = data.StoryTitle(story.StoryId) ?? $"story {story.StoryId}";
@@ -71,6 +71,10 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
             var ranked = new EventAdvisor(ctx, values, odds).Rank(choices, story);
             return new Advice(Situation.Event, header, $"Event \"{title}\": {ranked[0].Label}", ranked, notes, details);
         }
+        if (snapshot.Screen?.ViewController == SkillScreen && snapshot.SkillShop is { } shop)
+            return SkillShopAdvice(ctx, header, shop, notes, details);
+        if (snapshot.Screen?.ViewController == RaceScreen && snapshot.RaceList is { } races)
+            return RaceListAdvice(ctx, values, header, races, notes, details);
 
         var skills = new SkillAdvisor(ctx);
         var (buy, why) = skills.Plan(skills.Predicted(), c.SkillPoints);
