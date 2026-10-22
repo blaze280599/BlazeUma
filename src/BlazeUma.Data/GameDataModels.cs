@@ -59,11 +59,18 @@ public sealed record GoalRace(int RouteRaceId, int SortId, int Turn, int Require
     public bool MustWin => RequiredPlace == 1;
 }
 
+/// <summary>
+/// A skill_data row. AbilityValue is its first effect's float_ability_value_1_1; for stamina recovery
+/// (ability type 9) it is in 1/10000 of max HP: 150 for white skills, 550 for gold (negative = drains others).
+/// </summary>
 public sealed record SkillInfo(
     int Id, string Name, int Rarity, int GroupId, int GradeValue, int BaseCost,
-    string Condition, int AbilityType)
+    string Condition, int AbilityType, int AbilityValue = 0)
 {
     public bool IsGold => Rarity >= 2 && Rarity < 3;
+
+    /// <summary>Share of max HP the skill restores to its owner when it fires; 0 for anything else.</summary>
+    public double RecoveryFraction => AbilityType == 9 && AbilityValue > 0 ? AbilityValue / 10000.0 : 0;
 }
 
 /// <summary>support_card_type: 1 = stat card, 2 = friend, 3 = group. TrainingCommandId is the card's specialty (101 …).</summary>

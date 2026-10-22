@@ -71,10 +71,19 @@ public static class RaceStamina
     /// <see cref="HpNeeded"/>; above 1200 each effective point costs two stat points. Checked against Umalator
     /// (no skills, Normal mood, firm): this lands at about its 95% spurt rate (Nakayama 2500 pace chaser 1135 vs
     /// 96% at 1100; late surger 1054 vs 94% at 1000 / 98% at 1100; Nakayama 1600 545 vs 87% at 500 / 97% at 600).
+    /// <para>
+    /// <paramref name="recovery"/> is the HP recovery skills restore in the race, as a share of max HP (skill_data
+    /// float_ability_value_1_1 / 10000 for ability type 9: white 150 = 1.5%, gold 550 = 5.5%, as on uma.guide's
+    /// skill pages). A skill fires once HP is already below max, so nothing is lost to the cap and the race has
+    /// MaxHP × (1 + recovery) to spend: MaxHP ≥ HpNeeded / (1 + recovery). A gold recovery at 2500 m is ~180 HP,
+    /// about 250 Stamina for a pace chaser.
+    /// </para>
     /// </summary>
-    public static int Required(int distance, RunningStyle style, int speed, int guts, int distanceGrade, bool checkOnly = true)
+    public static int Required(int distance, RunningStyle style, int speed, int guts, int distanceGrade, bool checkOnly = true,
+        double recovery = 0)
     {
-        double effective = Math.Max(0, HpNeeded(distance, style, speed, guts, distanceGrade, checkOnly) - distance) / (0.8 * HpCoef(style));
+        double maxHp = HpNeeded(distance, style, speed, guts, distanceGrade, checkOnly) / (1 + Math.Max(0, recovery));
+        double effective = Math.Max(0, maxHp - distance) / (0.8 * HpCoef(style));
         return (int)Math.Ceiling(effective <= 1200 ? effective : 1200 + 2 * (effective - 1200));
     }
 }

@@ -70,6 +70,34 @@ public sealed class SkillAdvisor(CareerContext ctx)
         return new Candidate(skill, price, fit, skill.GradeValue * fit * ability);
     }
 
+    /// <summary>A recovery skill's expected HP in one race, as a share of max HP.</summary>
+    public sealed record Recovery(SkillInfo Skill, double Fraction, bool Owned);
+
+    /// <summary>Share of a hinted recovery skill's HP counted before it is bought: the trainee may never buy it.</summary>
+    public const double HintedRecoveryCredit = 0.5;
+
+    /// <summary>
+    /// Recovery skills that should fire in <paramref name="race"/>: owned ones in full and hinted ones (useful for
+    /// the remaining goals, fit ≥ 0.5) at <see cref="HintedRecoveryCredit"/>, each times its fit for this race's
+    /// distance, ground and style. A gold skill replaces its white version, so a group counts once: a hinted gold
+    /// over an owned white adds only the difference.
+    /// </summary>
+    public IReadOnlyList<Recovery> RecoveryFor(RaceProgram race)
+    {
+        var owned = ctx.Character.Skills.Select(s => ctx.Data.Skill(s.SkillId)).OfType<SkillInfo>()
+            .Where(s => s.RecoveryFraction > 0)
+            .GroupBy(s => s.GroupId).Select(g => g.MaxBy(s => s.RecoveryFraction)!).ToList();
+        var ownedIds = ctx.Character.Skills.Select(s => s.SkillId).ToHashSet();
+        double Owned(int groupId) => owned.FirstOrDefault(s => s.GroupId == groupId)?.RecoveryFraction ?? 0;
+        var hinted = ctx.Character.Hints.Select(h => ctx.Data.SkillForHint(h.GroupId, h.Rarity)).OfType<SkillInfo>()
+            .Where(s => s.RecoveryFraction > 0 && !ownedIds.Contains(s.Id) && Fit(s.Condition) >= 0.5)
+            .Select(s => new Recovery(s,
+                HintedRecoveryCredit * Math.Max(0, s.RecoveryFraction - Owned(s.GroupId)) * Fit(s.Condition, race), false))
+            .GroupBy(r => r.Skill.GroupId).Select(g => g.MaxBy(r => r.Fraction)!);
+        return owned.Select(s => new Recovery(s, s.RecoveryFraction * Fit(s.Condition, race), true))
+            .Concat(hinted).Where(r => r.Fraction > 0).ToList();
+    }
+
     /// <summary>
     /// 0..1 fit from the skill's activation condition. Alternatives separated by '@' take the best branch;
     /// clauses separated by '&amp;' multiply.

@@ -4,7 +4,8 @@ using BlazeUma.Memory.Game;
 namespace BlazeUma.Advisor;
 
 /// <summary>End-of-career stat targets and how much one more point of each stat is worth right now.</summary>
-public sealed record StatTargets(Stats Target, IReadOnlyDictionary<int, double> Weights);
+/// <remarks>StaminaNote says how recovery skills lowered the Stamina requirement, or is null.</remarks>
+public sealed record StatTargets(Stats Target, IReadOnlyDictionary<int, double> Weights, string? StaminaNote = null);
 
 /// <summary>
 /// Converts everything a turn can change (stats, skill points, energy, mood, bonds, conditions) into one
@@ -37,26 +38,56 @@ public sealed class ValueModel
     }
 
     /// <summary>Stamina stat for a full last spurt in a race of this distance with these Speed and Guts (<see cref="RaceStamina"/>).</summary>
-    public static int StaminaFor(CareerContext ctx, int distance, int speed, int guts) =>
-        RaceStamina.Required(distance, ctx.Style, speed, guts, ctx.Aptitude(Distances.Categorize(distance)));
+    public static int StaminaFor(CareerContext ctx, int distance, int speed, int guts, double recovery = 0) =>
+        RaceStamina.Required(distance, ctx.Style, speed, guts, ctx.Aptitude(Distances.Categorize(distance)), recovery: recovery);
+
+    /// <summary><see cref="StaminaFor(CareerContext, int, int, int, double)"/> less what the trainee's recovery skills restore in this race.</summary>
+    public static int StaminaFor(CareerContext ctx, RaceProgram race, int speed, int guts) =>
+        StaminaFor(ctx, race.Distance, speed, guts, new SkillAdvisor(ctx).RecoveryFor(race).Sum(r => r.Fraction));
 
     /// <summary>A stat at a future turn, assuming it moves linearly from now toward its end-of-career target.</summary>
     private static int Projected(CareerContext ctx, int now, int end, int turn) => now >= end ? now
         : now + (int)((end - now) * Math.Clamp((turn - ctx.Turn) / (double)Math.Max(1, CareerContext.FinalTurn - ctx.Turn), 0, 1));
 
+    /// <summary>The goal race that sets the Stamina target, at the Speed and Guts projected for it; Race is null without race data.</summary>
+    private sealed record StaminaNeed(int Stamina, RaceProgram? Race, int Speed, int Guts);
+
     /// <summary>
-    /// Stamina for every remaining goal race at the Speed and Guts the trainee is projected to have by then; the
-    /// scenario finals (no race data) are taken at the route's longest goal distance near the end of the career.
+    /// Stamina for every remaining goal race at the Speed and Guts the trainee is projected to have by then, less
+    /// what recovery skills restore there; the scenario finals (no race data) are taken as the route's longest
+    /// goal race near the end of the career (2000 m with no skill credit when the route has no race data).
     /// </summary>
-    private static int StaminaTarget(CareerContext ctx, int speedTarget, int gutsTarget)
+    private static StaminaNeed StaminaTarget(CareerContext ctx, int speedTarget, int gutsTarget)
     {
         var c = ctx.Character;
-        var races = ctx.RemainingGoals.Where(g => g.Race is not null).Select(g => (g.Race!.Distance, g.Turn)).ToList();
+        var races = ctx.RemainingGoals.Where(g => g.Race is not null).Select(g => (g.Race, g.Turn)).ToList();
         if (ctx.RemainingGoals.Any(g => g.Race is null))
-            races.Add((ctx.Goals.Where(g => g.Race is not null).Select(g => g.Race!.Distance).DefaultIfEmpty(2000).Max(), CareerContext.FinalTurn));
-        return races.Select(r => StaminaFor(ctx, r.Distance,
-                Projected(ctx, c.Stats.Speed, speedTarget, r.Turn), Projected(ctx, c.Stats.Guts, gutsTarget, r.Turn)))
-            .DefaultIfEmpty(0).Max();
+            races.Add((ctx.Goals.Select(g => g.Race).OfType<RaceProgram>().MaxBy(r => r.Distance), CareerContext.FinalTurn));
+        return races.Select(r =>
+            {
+                int speed = Projected(ctx, c.Stats.Speed, speedTarget, r.Turn), guts = Projected(ctx, c.Stats.Guts, gutsTarget, r.Turn);
+                return new StaminaNeed(r.Race is null ? StaminaFor(ctx, 2000, speed, guts) : StaminaFor(ctx, r.Race, speed, guts),
+                    r.Race, speed, guts);
+            })
+            .DefaultIfEmpty(new StaminaNeed(0, null, 0, 0)).MaxBy(r => r.Stamina)!;
+    }
+
+    /// <summary>
+    /// "Stamina need 893 for Arima Kinen (−180 Swinging Maestro, owned; −60 Rosy Outlook, hinted ×50%)": how far
+    /// recovery skills lowered the requirement of the race that sets the Stamina target. A skill's figure is what
+    /// the requirement would rise by without it; null when no recovery skill counts there.
+    /// </summary>
+    private static string? RecoveryNote(CareerContext ctx, StaminaNeed need)
+    {
+        if (need.Race is not { } race) return null;
+        var recoveries = new SkillAdvisor(ctx).RecoveryFor(race);
+        if (recoveries.Count == 0) return null;
+        double total = recoveries.Sum(r => r.Fraction);
+        int Without(double recovery) => StaminaFor(ctx, race.Distance, need.Speed, need.Guts, recovery);
+        var parts = recoveries.Select(r => $"−{Without(total - r.Fraction) - need.Stamina} {r.Skill.Name}, " +
+            (r.Owned ? "owned" : $"hinted ×{SkillAdvisor.HintedRecoveryCredit * 100:0}%"));
+        string all = recoveries.Count > 1 ? $"−{Without(0) - need.Stamina} in all: " : "";
+        return $"Stamina need {need.Stamina} for {race.Name} ({all}{string.Join("; ", parts)})";
     }
 
     /// <summary>
@@ -174,8 +205,12 @@ public sealed class ValueModel
         var c = ctx.Character;
         int total = ProjectedStatTotal(ctx);
         var target = Split(ctx, total, c.MaxStats.Stamina);
+        StaminaNeed need = new(c.MaxStats.Stamina, null, 0, 0);
         for (int pass = 0; pass < 2; pass++)
-            target = Split(ctx, total, Math.Min(StaminaTarget(ctx, target.Speed, target.Guts), c.MaxStats.Stamina));
+        {
+            need = StaminaTarget(ctx, target.Speed, target.Guts);
+            target = Split(ctx, total, Math.Min(need.Stamina, c.MaxStats.Stamina));
+        }
 
         // Reachable targets close in on every stat as the career runs out, so a deficit is measured against the
         // share of the end total still to gain: 1 = on plan (0.75 × priority), 1.5+ = well behind (full priority).
@@ -195,9 +230,9 @@ public sealed class ValueModel
         // at Speed 250 / Guts 150 would "need" ~800), so only part of the requirement counts before Senior year.
         double yearShare = ctx.Date.Year switch { 1 => 0.5, 2 => 0.75, _ => 1.0 };
         if (ctx.RemainingGoals.Any(g => g.Race is not null && g.Turn - ctx.Turn <= 12
-                && c.Stats.Stamina < StaminaFor(ctx, g.Race.Distance, c.Stats.Speed, c.Stats.Guts) * yearShare))
+                && c.Stats.Stamina < StaminaFor(ctx, g.Race, c.Stats.Speed, c.Stats.Guts) * yearShare))
             weights[ParamIds.Stamina] *= 1.5;
-        return new StatTargets(target, weights);
+        return new StatTargets(target, weights, RecoveryNote(ctx, need));
     }
 
     public static int Get(Stats s, int stat) => stat switch
