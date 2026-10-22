@@ -38,6 +38,9 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
 
         var placing = PlacingFor(ctx, race);
         reasons.Add(placing.ToString());
+        if (ctx.Aptitude(ctx.BestStyle) > ctx.Aptitude(ctx.Style))
+            reasons.Add($"set to {CareerContext.StyleName(ctx.Style)} ({CareerContext.Grade(ctx.Aptitude(ctx.Style))}); " +
+                $"{CareerContext.StyleName(ctx.BestStyle)} ({CareerContext.Grade(ctx.Aptitude(ctx.BestStyle))}) would race better");
         if (placing.StaminaNeeded > ctx.Character.Stats.Stamina)
             reasons.Add($"stamina {ctx.Character.Stats.Stamina} of ~{placing.StaminaNeeded} for a full spurt at {race.Distance}m");
         if (ctx.Character.Mood < Mood.Normal)
@@ -166,14 +169,6 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         >= 8 => 1.1, 7 => 1.0, 6 => 0.85, 5 => 0.75, 4 => 0.6, 3 => 0.4, 2 => 0.2, _ => 0.1,
     };
 
-    private static int StyleAptitude(CareerContext ctx) => ctx.Style switch
-    {
-        RunningStyle.FrontRunner => ctx.Character.Aptitudes.FrontRunner,
-        RunningStyle.LateSurger => ctx.Character.Aptitudes.LateSurger,
-        RunningStyle.EndCloser => ctx.Character.Aptitudes.EndCloser,
-        _ => ctx.Character.Aptitudes.PaceChaser,
-    };
-
     /// <summary>
     /// The trainee's chance to finish 1st, top 3 and top 5 in a race, from a power rating against a typical field.
     /// <para>
@@ -259,7 +254,7 @@ public sealed class RaceEvaluator(CareerContext ctx, ValueModel values)
         double rating = (Stat(s.Speed) * DistanceSpeedRate(distanceApt)
             + 0.6 * Stat(s.Power) * DistancePowerRate(distanceApt) * GroundRate(groundApt)
             + 0.15 * Stat(s.Guts)
-            + 0.2 * Stat(s.Wit) * StyleRate(StyleAptitude(ctx))) / 2;
+            + 0.2 * Stat(s.Wit) * StyleRate(ctx.Aptitude(ctx.Style))) / 2;
 
         double recovery = new SkillAdvisor(ctx).RecoveryFor(race).Where(r => r.Owned).Sum(r => r.Fraction);
         int needed = RaceStamina.Required(race.Distance, ctx.Style, s.Speed, s.Guts, distanceApt, recovery: recovery);

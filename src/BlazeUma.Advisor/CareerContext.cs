@@ -22,7 +22,13 @@ public sealed class CareerContext
     /// <summary>The career is over (its last screen was shown), possibly before the final turn after a lost goal.</summary>
     public bool CareerOver { get; }
     public int TurnsLeft => CareerOver ? 0 : Math.Max(0, FinalTurn - Turn);
-    public RunningStyle Style => Enum.IsDefined(typeof(RunningStyle), Character.RunningStyle) ? (RunningStyle)Character.RunningStyle : RunningStyle.PaceChaser;
+    /// <summary>The style the career has set, or the trainee's best-graded one when none is read.</summary>
+    public RunningStyle Style => Enum.IsDefined(typeof(RunningStyle), Character.RunningStyle) ? (RunningStyle)Character.RunningStyle : BestStyle;
+
+    /// <summary>Highest-graded running style; ties go to Pace, then Front, Late, End.</summary>
+    public RunningStyle BestStyle =>
+        new[] { RunningStyle.PaceChaser, RunningStyle.FrontRunner, RunningStyle.LateSurger, RunningStyle.EndCloser }
+            .MaxBy(Aptitude);
 
     /// <summary>Share of remaining goal races per distance category (the scenario finals use the trainee's best goal distance).</summary>
     public IReadOnlyDictionary<DistanceCategory, double> DistanceProfile { get; }
@@ -110,6 +116,19 @@ public sealed class CareerContext
     };
 
     public int Aptitude(Ground ground) => ground == Ground.Turf ? Character.Aptitudes.Turf : Character.Aptitudes.Dirt;
+
+    public int Aptitude(RunningStyle style) => style switch
+    {
+        RunningStyle.FrontRunner => Character.Aptitudes.FrontRunner,
+        RunningStyle.LateSurger => Character.Aptitudes.LateSurger,
+        RunningStyle.EndCloser => Character.Aptitudes.EndCloser,
+        _ => Character.Aptitudes.PaceChaser,
+    };
+
+    public static string StyleName(RunningStyle style) => style switch
+    {
+        RunningStyle.FrontRunner => "Front", RunningStyle.LateSurger => "Late", RunningStyle.EndCloser => "End", _ => "Pace",
+    };
 
     public static string Grade(int aptitude) => aptitude switch
     {
