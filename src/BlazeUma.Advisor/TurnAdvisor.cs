@@ -240,11 +240,12 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         if (raceBonus > 0) solo.Add($"{ctx.NextGoal!.Name} soon with low mood (+10)");
         yield return new ScoredOption("Recreation: trainee", soloValue + raceBonus, solo);
 
-        foreach (var friend in ctx.Character.Bonds.Where(b => b.OutingUnlocked))
+        // After the fifth chain event the dialog greys the friend's row out ("Event Complete!"): no more outings.
+        foreach (var friend in ctx.Character.Bonds.Where(b => b.OutingUnlocked && b.OutingStep < 5))
         {
             string name = ctx.Data.CharacterName(friend.CharaId) ?? $"card {friend.TargetId}";
             double energy = values.Energy(OutingEnergy);
-            double chain = friend.OutingStep < 5 ? OutingChainStepValue : 0;
+            double chain = OutingChainStepValue;
             double bond = friend.Value < 100 ? OutingBond * 0.5 : 0;
             var reasons = new List<string>
             {

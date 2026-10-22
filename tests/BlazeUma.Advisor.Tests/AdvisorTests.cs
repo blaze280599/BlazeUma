@@ -34,6 +34,16 @@ public class AdvisorTests
     }
 
     [Fact]
+    public void FinishedOutingChain_IsNotOffered()
+    {
+        var c = Snapshots.Daiwa(energy: 70, mood: Mood.Awful, lightHelloOuting: true);
+        c = c with { Bonds = c.Bonds.Select(b => b.TargetId == 6 ? b with { Value = 100, OutingStep = 5 } : b).ToList() };
+        var advice = Advise(Snapshots.Snapshot(c));
+        Assert.DoesNotContain(advice.Options, o => o.Label == "Recreation: Light Hello");
+        Assert.Equal("Recreation: trainee", advice.Best!.Label);
+    }
+
+    [Fact]
     public void LowEnergy_HighFailure_AvoidsRiskyTraining()
     {
         var advice = Advise(Snapshots.Snapshot(Snapshots.Daiwa(energy: 20, mood: Mood.Good), commands: Snapshots.StandardCommands(failure: 35)));
