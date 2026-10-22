@@ -58,6 +58,10 @@ internal sealed class FakeGameData : IGameData
     /// <summary>card_data.running_style for every card; none by default.</summary>
     public RunningStyle? CardStyle { get; set; }
     public RunningStyle? DefaultRunningStyle(int cardId) => CardStyle;
+
+    /// <summary>card_data.talent_* by param id for every card; none by default.</summary>
+    public Dictionary<int, int> Growth { get; } = [];
+    public IReadOnlyDictionary<int, int> GrowthRates(int cardId) => Growth;
     public SupportCardInfo? SupportCard(int supportCardId) => supportCardId switch
     {
         30145 => new SupportCardInfo(30145, "[Welcome to Umayuru] Tanino Gimlet", 1084, 1, 102),

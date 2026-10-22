@@ -422,9 +422,12 @@ public sealed class ValueModel
     /// Resting just before camp instead of during it trades an ordinary turn for that difference.
     /// </summary>
     public double CampTrainingPremium() => BaseTraining.Keys.Max(id =>
-        (CampTraining[id].Sum(g => Param(g.Param, g.Amount)) - BaseTraining[id].Sum(g => Param(g.Param, g.Amount))) * TypicalTrainingMultiplier);
+        (Trained(CampTraining[id]) - Trained(BaseTraining[id])) * TypicalTrainingMultiplier);
 
-    /// <summary>Mood, other cards' training effectiveness, partner count and growth on a typical training.</summary>
+    /// <summary>Worth of a training's base gains with the trainee's growth bonuses (training formula: gains × (1 + growth)).</summary>
+    private double Trained((int Param, int Amount)[] gains) => gains.Sum(g => Param(g.Param, g.Amount * _ctx.Growth(g.Param)));
+
+    /// <summary>Mood, other cards' training effectiveness and partner count on a typical training.</summary>
     public const double TypicalTrainingMultiplier = 1.4;
     /// <summary>Bond from one training with a card (without Charming).</summary>
     public const int BondPerTraining = 7;
@@ -441,7 +444,7 @@ public sealed class ValueModel
     /// </summary>
     public double FriendshipTrainingExtra(int trainingId, int friendshipBonus) =>
         BaseTraining.TryGetValue(trainingId, out var gains)
-            ? gains.Sum(g => Param(g.Param, g.Amount)) * TypicalTrainingMultiplier * friendshipBonus / 100.0
+            ? Trained(gains) * TypicalTrainingMultiplier * friendshipBonus / 100.0
             : 0;
 
     /// <summary>
@@ -523,7 +526,7 @@ public sealed class ValueModel
         {
             double reached = Math.Clamp(future - at, 0, 1);
             if (reached <= 0) break;
-            double step = levels[level].Sum(g => Param(g.Param, g.Amount)) - levels[level - 1].Sum(g => Param(g.Param, g.Amount));
+            double step = Trained(levels[level]) - Trained(levels[level - 1]);
             value += reached * (step * TypicalTrainingMultiplier + Energy(UraTrainingEnergy[id][level] - UraTrainingEnergy[id][level - 1]));
             ups++;
         }

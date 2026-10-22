@@ -118,6 +118,8 @@ public interface IGameData
     IReadOnlyList<int> BaseSkillIds(int cardId, int talentLevel);
     /// <summary>The style a trainee card starts a career with (card_data.running_style); null when unknown.</summary>
     RunningStyle? DefaultRunningStyle(int cardId) => null;
+    /// <summary>A trainee card's stat growth bonuses in percent (card_data.talent_*), by param id (ParamIds numbering, Speed 1 … Wit 5).</summary>
+    IReadOnlyDictionary<int, int> GrowthRates(int cardId) => new Dictionary<int, int>();
     SupportCardInfo? SupportCard(int supportCardId);
     /// <summary>
     /// Effects at the card's level: from its total <paramref name="exp"/> (support_card_level), capped by the

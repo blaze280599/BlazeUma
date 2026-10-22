@@ -120,6 +120,10 @@ public sealed class CareerContext
 
     public int Aptitude(Ground ground) => ground == Ground.Turf ? Character.Aptitudes.Turf : Character.Aptitudes.Dirt;
 
+    /// <summary>Training gain multiplier from the card's growth bonus on a stat (1.2 for +20%); 1 for other params.</summary>
+    public double Growth(int param) => 1 + (_growth ??= Data.GrowthRates(Character.CardId)).GetValueOrDefault(param) / 100.0;
+    private IReadOnlyDictionary<int, int>? _growth;
+
     public int Aptitude(RunningStyle style) => style switch
     {
         RunningStyle.FrontRunner => Character.Aptitudes.FrontRunner,

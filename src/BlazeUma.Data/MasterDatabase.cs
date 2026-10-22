@@ -165,6 +165,10 @@ public sealed class MasterDatabase : IGameData, IDisposable
         Query("select running_style from card_data where id = $c", r => r.GetInt32(0), ("$c", cardId))
             .Where(s => Enum.IsDefined(typeof(RunningStyle), s)).Select(s => (RunningStyle?)s).FirstOrDefault();
 
+    public IReadOnlyDictionary<int, int> GrowthRates(int cardId) =>
+        Query("select talent_speed, talent_stamina, talent_pow, talent_guts, talent_wiz from card_data where id = $c",
+            r => Enumerable.Range(0, 5).ToDictionary(i => i + 1, r.GetInt32), ("$c", cardId)).FirstOrDefault() ?? [];
+
     public SupportCardInfo? SupportCard(int supportCardId) =>
         Query("select id, chara_id, support_card_type, command_id from support_card_data where id = $id",
             r => new SupportCardInfo(r.GetInt32(0), Text(TextSupportCard, r.GetInt32(0)) ?? $"card {r.GetInt32(0)}",
