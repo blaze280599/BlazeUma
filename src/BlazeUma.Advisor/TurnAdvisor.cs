@@ -64,14 +64,18 @@ public sealed class TurnAdvisor(CareerContext ctx, ValueModel values)
         }
         if (names.Count > 0) reasons.Add($"with {string.Join(", ", names)} (+{bonds:0.0})");
 
+        // A failed training is taken not to count toward the facility's next level.
+        var (facility, facilityReason) = values.FacilityProgress(trainingId);
+        if (facilityReason is not null) reasons.Add(facilityReason);
+
         double energy = values.Energy(command.Gains.TryGetValue("energy", out var e) ? e.Value + e.Bonus : 0);
         reasons.Add($"energy ({energy:+0.0;-0.0})");
 
         double p = command.FailureRate / 100.0;
-        double risk = p * (gains + bonds + values.FailureLoss);
+        double risk = p * (gains + bonds + facility + values.FailureLoss);
         if (command.FailureRate > 0) reasons.Add($"{command.FailureRate}% failure (-{risk:0.0})");
 
-        double score = (1 - p) * (gains + bonds) - p * values.FailureLoss + energy;
+        double score = (1 - p) * (gains + bonds + facility) - p * values.FailureLoss + energy;
         string name = TrainingNames.GetValueOrDefault(trainingId, $"Training {command.Id}");
         return new ScoredOption($"Train {name}", score, reasons);
     }

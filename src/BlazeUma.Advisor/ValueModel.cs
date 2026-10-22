@@ -35,6 +35,50 @@ public sealed class ValueModel
     {
         _ctx = ctx;
         Targets = PlanTargets(ctx);
+        EnergyOutlook = Outlook(ctx);
+    }
+
+    /// <summary>
+    /// How much energy is worth against the next few turns (<see cref="Energy"/> multiplies by Factor), and the
+    /// one-line reason, or null when they are ordinary training turns.
+    /// </summary>
+    public (double Factor, string? Reason) EnergyOutlook { get; }
+
+    /// <summary>Turns <see cref="Outlook"/> looks ahead.</summary>
+    public const int EnergyLookahead = 3;
+    /// <summary>A goal race day spends no energy on training, but energy carries over it to the turns after.</summary>
+    public const double RaceDayEnergyUse = 0.6;
+    /// <summary>A summer camp turn is a level-5 training, ~1.25× a typical one (<see cref="CampToNormalGain"/>).</summary>
+    public const double CampEnergyUse = 1.2;
+
+    /// <summary>
+    /// Energy is only worth the trainings it pays for. Each of the next <see cref="EnergyLookahead"/> turns counts
+    /// 1 as an ordinary training turn, <see cref="CampEnergyUse"/> in summer camp, <see cref="RaceDayEnergyUse"/> as a
+    /// goal race day and 0 past the career's end; the factor is their mean. Just before camp the camp bands in
+    /// <see cref="Energy"/> already carry this, so the factor stays 1 there. Energy doesn't change race results
+    /// (mood does), so a goal race ahead lowers energy's worth rather than raising it.
+    /// </summary>
+    private static (double Factor, string? Reason) Outlook(CareerContext ctx)
+    {
+        if (ctx.TurnsUntilSummerCamp is int camp and (1 or 2))
+            return (1, $"summer camp in {camp}: energy worth more (camp bands)");
+        double use = 0;
+        int races = 0, camps = 0, past = 0;
+        for (int t = ctx.Turn + 1; t <= ctx.Turn + EnergyLookahead; t++)
+        {
+            if (t > CareerContext.FinalTurn) past++;
+            else if (ctx.IsGoalTurn(t)) { races++; use += RaceDayEnergyUse; }
+            else if (ctx.IsSummerCamp(t)) { camps++; use += CampEnergyUse; }
+            else use += 1;
+        }
+        double factor = use / EnergyLookahead;
+        if (races == 0 && camps == 0 && past == 0) return (1, null);
+        var why = new List<string>();
+        if (camps > 0) why.Add($"{camps} camp turn{(camps > 1 ? "s" : "")}");
+        if (races > 0) why.Add($"{races} goal race day{(races > 1 ? "s" : "")}");
+        if (past > 0) why.Add($"career ends in {CareerContext.FinalTurn - ctx.Turn}");
+        string worth = factor >= 1 ? "worth more" : "worth less";
+        return (factor, $"next {EnergyLookahead} turns: {string.Join(", ", why)}: energy {worth} (×{factor:0.00})");
     }
 
     /// <summary>Stamina stat for a full last spurt in a race of this distance with these Speed and Guts (<see cref="RaceStamina"/>).</summary>
@@ -259,6 +303,7 @@ public sealed class ValueModel
     /// Value of an energy change from the current level. Energy is worth more the lower it is (failure risk and
     /// lost turns), and gains above max energy are wasted. In the two turns before summer camp, energy carried
     /// in is spent on level-5 trainings, so the upper bands are worth more (uma.guide: enter camp with high energy).
+    /// The result is scaled by <see cref="EnergyOutlook"/>: race days and the career's end ahead make it worth less.
     /// </summary>
     public double Energy(double delta, double? from = null)
     {
@@ -275,6 +320,7 @@ public sealed class ValueModel
             value += overlap * marginal;
             floor = upto;
         }
+        value *= EnergyOutlook.Factor;
         return end >= start ? value : -value;
     }
 
@@ -292,25 +338,33 @@ public sealed class ValueModel
         return applicable * perLevel;
     }
 
-    /// <summary>URA level-3 base gains per training (uma.guide Career Mechanics), before multipliers.</summary>
-    private static readonly IReadOnlyDictionary<int, (int Param, int Amount)[]> BaseTraining = new Dictionary<int, (int, int)[]>
+    /// <summary>URA base gains per training at facility levels 1–5 (uma.guide Career Mechanics), before multipliers.</summary>
+    private static readonly IReadOnlyDictionary<int, (int Param, int Amount)[][]> UraTraining = new Dictionary<int, (int, int)[][]>
     {
-        [TrainingIds.Speed] = [(ParamIds.Speed, 13), (ParamIds.Power, 6), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Stamina] = [(ParamIds.Stamina, 12), (ParamIds.Guts, 6), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Power] = [(ParamIds.Stamina, 6), (ParamIds.Power, 11), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Guts] = [(ParamIds.Speed, 5), (ParamIds.Power, 5), (ParamIds.Guts, 10), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Wit] = [(ParamIds.Speed, 2), (ParamIds.Wit, 12), (ParamIds.SkillPoints, 5)],
+        [TrainingIds.Speed] = Levels(ParamIds.Speed, [11, 12, 13, 14, 15], ParamIds.Power, [6, 6, 6, 7, 8], 4),
+        [TrainingIds.Stamina] = Levels(ParamIds.Stamina, [10, 11, 12, 13, 14], ParamIds.Guts, [6, 6, 6, 7, 8], 4),
+        [TrainingIds.Power] = Levels(ParamIds.Power, [9, 10, 11, 12, 13], ParamIds.Stamina, [6, 6, 6, 7, 8], 4),
+        [TrainingIds.Guts] = [.. Levels(ParamIds.Guts, [8, 9, 10, 11, 13], ParamIds.Speed, [5, 5, 5, 6, 6], 4)
+            .Select(level => level.Append((ParamIds.Power, 5)).ToArray())],
+        [TrainingIds.Wit] = Levels(ParamIds.Wit, [10, 11, 12, 13, 14], ParamIds.Speed, [2, 2, 2, 3, 4], 5),
     };
 
-    /// <summary>URA level-5 base gains (every facility during summer camp), same source as <see cref="BaseTraining"/>.</summary>
-    private static readonly IReadOnlyDictionary<int, (int Param, int Amount)[]> CampTraining = new Dictionary<int, (int, int)[]>
+    /// <summary>Energy per training at facility levels 1–5, same source.</summary>
+    private static readonly IReadOnlyDictionary<int, int[]> UraTrainingEnergy = new Dictionary<int, int[]>
     {
-        [TrainingIds.Speed] = [(ParamIds.Speed, 15), (ParamIds.Power, 8), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Stamina] = [(ParamIds.Stamina, 14), (ParamIds.Guts, 8), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Power] = [(ParamIds.Stamina, 8), (ParamIds.Power, 13), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Guts] = [(ParamIds.Speed, 6), (ParamIds.Power, 5), (ParamIds.Guts, 13), (ParamIds.SkillPoints, 4)],
-        [TrainingIds.Wit] = [(ParamIds.Speed, 4), (ParamIds.Wit, 14), (ParamIds.SkillPoints, 5)],
+        [TrainingIds.Speed] = [-21, -22, -23, -25, -27], [TrainingIds.Stamina] = [-19, -20, -21, -23, -25],
+        [TrainingIds.Power] = [-20, -21, -22, -24, -26], [TrainingIds.Guts] = [-22, -23, -24, -26, -28],
+        [TrainingIds.Wit] = [5, 5, 5, 5, 5],
     };
+
+    private static (int, int)[][] Levels(int main, int[] mainGains, int second, int[] secondGains, int skillPoints) =>
+        [.. Enumerable.Range(0, 5).Select(i => new[] { (main, mainGains[i]), (second, secondGains[i]), (ParamIds.SkillPoints, skillPoints) })];
+
+    /// <summary>Level-3 base gains, a typical facility outside camp.</summary>
+    private static readonly IReadOnlyDictionary<int, (int Param, int Amount)[]> BaseTraining = UraTraining.ToDictionary(t => t.Key, t => t.Value[2]);
+
+    /// <summary>Level-5 base gains: every facility during summer camp.</summary>
+    private static readonly IReadOnlyDictionary<int, (int Param, int Amount)[]> CampTraining = UraTraining.ToDictionary(t => t.Key, t => t.Value[4]);
 
     /// <summary>
     /// How much more the best camp training is worth than the same training now (level 5 vs a typical level 3).
@@ -358,6 +412,72 @@ public sealed class ValueModel
         double turnsGained = Math.Clamp(turnsWithFriendship, 0, TurnsPerBondTraining);
         return turnsGained * TrainingTurnShare * SpecialtyChance(effects.SpecialtyPriority) * FriendshipPickRate
             * FriendshipTrainingExtra(specialtyTrainingId, effects.FriendshipBonus);
+    }
+
+    /// <summary>A training facility's level (1–5) and trainings done toward the next one (0–3; 4 trainings a level).</summary>
+    public sealed record Facility(int Level, int Progress);
+
+    /// <summary>Stats a trainee starts with before training (base stats plus inheritance; ~80–130 in the logs' careers).</summary>
+    public const int StartStat = 100;
+    /// <summary>Least share of future trainings a facility is assumed to get: the trainings on offer change every turn.</summary>
+    public const double MinFacilityShare = 0.15;
+
+    /// <summary>Turns from <paramref name="from"/> to <paramref name="to"/> that can be ordinary trainings (no summer camp, no goal race).</summary>
+    private int OrdinaryTurns(int from, int to) =>
+        Enumerable.Range(from, Math.Max(0, to - from + 1)).Count(t => !_ctx.IsSummerCamp(t) && !_ctx.IsGoalTurn(t));
+
+    /// <summary>
+    /// Share of the trainings so far done on a facility, taken from its main stat's growth since the start
+    /// against all five stats' growth (secondary gains blur it, so it is an estimate).
+    /// </summary>
+    private double FacilityShare(int trainingId)
+    {
+        var s = _ctx.Character.Stats;
+        double Grown(int stat) => Math.Max(0, Get(s, stat) - StartStat);
+        double all = new[] { ParamIds.Speed, ParamIds.Stamina, ParamIds.Power, ParamIds.Guts, ParamIds.Wit }.Sum(Grown);
+        return all > 0 ? Grown(TurnAdvisor.TrainingStat(trainingId)) / all : 0.2;
+    }
+
+    /// <summary>
+    /// Estimated facility level. The snapshot doesn't read it (WorkSingleModeCharaData._trainingLevelDic is
+    /// unmapped), and the shown gains can't give it: a level is one base point (~9%), less than what support
+    /// cards, partners and friendship change between trainings. So: trainings so far (<see cref="TrainingTurnShare"/>
+    /// of the ordinary turns before this one) × the facility's <see cref="FacilityShare"/>. Camp trainings are
+    /// assumed not to count toward levels.
+    /// </summary>
+    public Facility EstimatedFacility(int trainingId)
+    {
+        int done = (int)(TrainingTurnShare * OrdinaryTurns(1, _ctx.Turn - 1) * FacilityShare(trainingId));
+        return done >= 16 ? new Facility(5, 0) : new Facility(1 + done / 4, done % 4);
+    }
+
+    /// <summary>
+    /// What one training on a facility adds by bringing its level-ups forward. Each later level-up then comes one
+    /// training sooner, so one future training there runs a level higher: worth that level's extra base gains
+    /// (less its extra energy) × <see cref="TypicalTrainingMultiplier"/>, for every level-up still reached among
+    /// the facility's future ordinary trainings (camp is level 5 anyway). Many trainings ahead reach several
+    /// level-ups, so early concentration pays; late in the career few or none are reached.
+    /// </summary>
+    public (double Value, string? Reason) FacilityProgress(int trainingId)
+    {
+        int id = TrainingIds.Base(trainingId);
+        if (_ctx.InSummerCamp || !UraTraining.TryGetValue(id, out var levels)) return (0, null);
+        var facility = EstimatedFacility(id);
+        double future = TrainingTurnShare * OrdinaryTurns(_ctx.Turn + 1, CareerContext.FinalTurn)
+            * Math.Max(FacilityShare(id), MinFacilityShare);
+        double value = 0;
+        int ups = 0;
+        // After this training, 3 − Progress more finish the level; the next one (0-based index 3 − Progress) is the first at the new level.
+        for (int level = facility.Level, at = 3 - facility.Progress; level < 5; level++, at += 4)
+        {
+            double reached = Math.Clamp(future - at, 0, 1);
+            if (reached <= 0) break;
+            double step = levels[level].Sum(g => Param(g.Param, g.Amount)) - levels[level - 1].Sum(g => Param(g.Param, g.Amount));
+            value += reached * (step * TypicalTrainingMultiplier + Energy(UraTrainingEnergy[id][level] - UraTrainingEnergy[id][level - 1]));
+            ups++;
+        }
+        if (ups == 0) return (0, null);
+        return (value, $"facility ~Lv{facility.Level} {facility.Progress}/4 (est.): {ups} level-up{(ups > 1 ? "s" : "")} a training sooner ({value:+0.0;-0.0})");
     }
 
     /// <summary>What a failed training costs on top of losing its gains: stat −5, mood −1, chance of Practice Poor.</summary>

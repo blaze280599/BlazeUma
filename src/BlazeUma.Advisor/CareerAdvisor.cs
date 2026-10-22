@@ -27,6 +27,7 @@ public sealed class CareerAdvisor(IGameData data)
             new("Targets", $"Spd {t.Speed}  Sta {t.Stamina}  Pow {t.Power}  Gut {t.Guts}  Wit {t.Wit}"),
         };
         if (values.Targets.StaminaNote is { } staminaNote) notes.Add(new Note("Recovery", staminaNote));
+        if (values.EnergyOutlook.Reason is { } energyNote) notes.Add(new Note("Energy", energyNote));
         if (ctx.NextGoal is { } next)
             notes.Add(new Note("Next goal", $"{next.Name} on turn {next.Turn}" +
                 (next.Turn > ctx.Turn ? $" (in {next.Turn - ctx.Turn})" : " (today)") +
