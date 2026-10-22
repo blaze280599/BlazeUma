@@ -22,6 +22,8 @@ internal static class RaceRunner
 
     private const string Home = "Gallop.SingleModeMainViewController";
     private const string EntryConfirmTitle = "Race Details";
+    /// <summary>Shown after losing a goal race (DialogSingleModeRouteContinue): Cancel / Try Again.</summary>
+    private const string TryAgainTitle = "Try Again", RetryLabel = "Try Again";
     /// <summary>Shown when View Results is tapped for a race never watched before (padlock on the button).</summary>
     private const string LockedTitle = "Unlock Requirements";
     /// <summary>Popups that follow a race; open on the home screen they still mean the race is being finished.</summary>
@@ -150,6 +152,12 @@ internal static class RaceRunner
             if (!button.Path.StartsWith("Dialog[")) lastRule = button.Path;
             stall.Restart();
             bool gone = WaitGone(r, tapper, button.Address);
+            if (description.StartsWith(RetryLabel))
+            {
+                // The race is run again from the paddock: start the per-run bookkeeping afresh.
+                taps.Clear(); locked.Clear(); misses.Clear(); lastRule = null;
+                Console.WriteLine("   Running the race again.");
+            }
             if (rule is { Once: true }) locked.Add(rule.Path);
             else if (rule is { Repeat: false } && !gone && (misses[rule.Path] = misses.GetValueOrDefault(rule.Path) + 1) >= 2 && locked.Add(rule.Path))
                 Console.WriteLine($"   {description} did nothing twice; trying the next option.");
@@ -218,6 +226,13 @@ internal static class RaceRunner
         if (shown.Count == 0)
             blocker = buttons.FirstOrDefault(b => b.CanTap && DialogIndex(b) == top && b.Path.EndsWith("._inputBlock")
                                                   && tapper.IsActive(b.Address) == true);
+        // A lost goal race: Cancel fails the goal and ends the career, so retry (a free try a day, then an alarm
+        // clock). Try Again is the right button; Replay and Placing in the contents only show the result.
+        if (title == TryAgainTitle)
+        {
+            var retry = shown.FirstOrDefault(b => b.Path.EndsWith("._rightButton"));
+            return retry is null ? (null, $"\"{title}\" has no Try Again button showing") : (($"{RetryLabel} (goal race lost)", retry), null);
+        }
         if (title == EntryConfirmTitle)
         {
             var right = shown.FirstOrDefault(b => b.Path.EndsWith("._rightButton"));
