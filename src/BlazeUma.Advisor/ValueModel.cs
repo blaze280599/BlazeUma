@@ -60,29 +60,133 @@ public sealed class ValueModel
     }
 
     /// <summary>
-    /// Targets follow uma.guide's stat priority for the 1400-cap URA (July patch): Speed capped, Stamina for a
-    /// full last spurt in every remaining goal race, Power ~800–1000 (closers need more acceleration), Wit as high
-    /// as possible, Guts optional.
+    /// Stat total from the two best trainings on offer when the snapshot shows none (race day, event screen).
+    /// The logged careers' best two trainings average 22–29 from turn 16 to turn 72 (measure_logs.py data).
+    /// </summary>
+    public const int TypicalTrainingStatGain = 25;
+    /// <summary>
+    /// Stats per turn from events, races and outings on top of trainings. The logged careers grew 24–27 stats a
+    /// turn in all (turns 16–27 and 27–71) against ~19 from 0.7 × their best trainings.
+    /// </summary>
+    public const double OtherStatsPerTurn = 5;
+    /// <summary>Camp trainings are level 5; URA base gains at level 3 total ~0.8 of level 5 (<see cref="BaseTraining"/>).</summary>
+    private const double CampToNormalGain = 0.8;
+
+    /// <summary>Stat points the picked training is expected to give: the two best trainings on offer, averaged.</summary>
+    public static double TrainingStatGain(CareerContext ctx)
+    {
+        var best = (ctx.Snapshot.Commands ?? []).Where(c => c.Type == CommandType.Training)
+            .Select(c => c.Gains.Where(g => TurnAdvisor.ParamNameToId(g.Key) is >= ParamIds.Speed and <= ParamIds.Wit)
+                .Sum(g => g.Value.Value + g.Value.Bonus))
+            .OrderDescending().Take(2).ToList();
+        double gain = best.Count > 0 && best.Average() > 0 ? best.Average() : TypicalTrainingStatGain;
+        return ctx.InSummerCamp ? gain * CampToNormalGain : gain;
+    }
+
+    /// <summary>
+    /// End-of-career stat total if the rest of the career goes like today: every remaining turn gives
+    /// <see cref="TrainingTurnShare"/> of a training's gain plus <see cref="OtherStatsPerTurn"/>.
+    /// </summary>
+    public static int ProjectedStatTotal(CareerContext ctx) => Total(ctx.Character.Stats)
+        + (int)(ctx.TurnsLeft * (TrainingStatGain(ctx) * TrainingTurnShare + OtherStatsPerTurn));
+
+    private static int Total(Stats s) => s.Speed + s.Stamina + s.Power + s.Guts + s.Wit;
+
+    /// <summary>
+    /// Shares of the projected total besides Stamina, per goal distance (uma.guide stats page: Stamina ≈ Speed to
+    /// the cap, then Power ~800–1000 ≈ Wit, Guts last). Power is acceleration and position fighting, which decide
+    /// short races with short spurts, so sprint and mile take more of it; Guts lowers late-race HP use and wins
+    /// long duels, so long routes take a little more. Wit covers the rest. Stamina gets Speed's share.
+    /// </summary>
+    private static (double Speed, double Power, double Guts, double Wit) DistanceShares(DistanceCategory d) => d switch
+    {
+        DistanceCategory.Sprint => (0.42, 0.30, 0.08, 0.20),
+        DistanceCategory.Mile => (0.42, 0.28, 0.10, 0.20),
+        DistanceCategory.Long => (0.42, 0.22, 0.15, 0.21),
+        _ => (0.42, 0.25, 0.11, 0.22),
+    };
+
+    /// <summary>
+    /// <see cref="DistanceShares"/> weighted by the route's remaining goal distances. Late surgers and end closers
+    /// run from the back and need acceleration to pass (uma.guide: Power for closers), so they move 0.03 from Wit
+    /// to Power.
+    /// </summary>
+    private static Dictionary<int, double> Shares(CareerContext ctx)
+    {
+        var s = new Dictionary<int, double> { [ParamIds.Speed] = 0, [ParamIds.Power] = 0, [ParamIds.Guts] = 0, [ParamIds.Wit] = 0 };
+        foreach (var (category, share) in ctx.DistanceProfile)
+        {
+            var d = DistanceShares(category);
+            s[ParamIds.Speed] += d.Speed * share; s[ParamIds.Power] += d.Power * share;
+            s[ParamIds.Guts] += d.Guts * share; s[ParamIds.Wit] += d.Wit * share;
+        }
+        if (ctx.Style is RunningStyle.LateSurger or RunningStyle.EndCloser)
+        {
+            s[ParamIds.Power] += 0.03;
+            s[ParamIds.Wit] -= 0.03;
+        }
+        s[ParamIds.Stamina] = s[ParamIds.Speed];
+        return s;
+    }
+
+    /// <summary>
+    /// Splits <paramref name="total"/> by <see cref="Shares"/>, each stat at most its cap; Stamina's cap is
+    /// <paramref name="staminaNeed"/>, the race requirement, so stamina a short route doesn't need goes to the
+    /// other stats. A stat already past its share keeps its current value; what capped and ahead stats free or
+    /// take is shared out among the others.
+    /// </summary>
+    private static Stats Split(CareerContext ctx, int total, int staminaNeed)
+    {
+        var c = ctx.Character;
+        var shares = Shares(ctx);
+        var fixedAt = new Dictionary<int, int>();
+        var target = new Dictionary<int, int>();
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            var free = shares.Keys.Where(k => !fixedAt.ContainsKey(k)).ToList();
+            double left = total - fixedAt.Values.Sum(), shareSum = free.Sum(k => shares[k]);
+            foreach (int stat in free)
+            {
+                int t = (int)(left * shares[stat] / shareSum), now = Get(c.Stats, stat);
+                int cap = stat == ParamIds.Stamina ? Math.Max(now, staminaNeed) : Get(c.MaxStats, stat);
+                target[stat] = t;
+                if (t <= now || t >= cap)
+                {
+                    fixedAt[stat] = target[stat] = Math.Clamp(t, now, cap);
+                    changed = true;
+                }
+            }
+        }
+        // Stamina past the race requirement stays the requirement, so its weight drops to the "goal met" level.
+        int stamina = c.Stats.Stamina >= staminaNeed ? staminaNeed : target[ParamIds.Stamina];
+        return new Stats(target[ParamIds.Speed], stamina, target[ParamIds.Power], target[ParamIds.Guts], target[ParamIds.Wit]);
+    }
+
+    /// <summary>
+    /// Targets follow uma.guide's stat priority for the 1400-cap URA (July patch), scaled to what this career can
+    /// reach (<see cref="ProjectedStatTotal"/>) and split by <see cref="Shares"/>, each stat at most its cap:
+    /// Stamina as much as Speed up to a full last spurt in every remaining goal race, Power ~ Wit, Guts last. The
+    /// stamina requirement depends on the split's Speed and Guts, so the split is run three times.
     /// </summary>
     private static StatTargets PlanTargets(CareerContext ctx)
     {
         var c = ctx.Character;
-        bool front = ctx.Style is RunningStyle.FrontRunner or RunningStyle.PaceChaser;
-        int guts = Math.Min(350, c.MaxStats.Guts);
-        var target = new Stats(
-            Speed: c.MaxStats.Speed,
-            Stamina: Math.Min(StaminaTarget(ctx, c.MaxStats.Speed, guts), c.MaxStats.Stamina),
-            Power: Math.Min(front ? 900 : 1000, c.MaxStats.Power),
-            Guts: guts,
-            Wit: Math.Min(1000, c.MaxStats.Wit));
+        int total = ProjectedStatTotal(ctx);
+        var target = Split(ctx, total, c.MaxStats.Stamina);
+        for (int pass = 0; pass < 2; pass++)
+            target = Split(ctx, total, Math.Min(StaminaTarget(ctx, target.Speed, target.Guts), c.MaxStats.Stamina));
 
+        // Reachable targets close in on every stat as the career runs out, so a deficit is measured against the
+        // share of the end total still to gain: 1 = on plan (0.75 × priority), 1.5+ = well behind (full priority).
+        double toGain = Math.Max(0.02, (total - Total(c.Stats)) / (double)total);
         var weights = new Dictionary<int, double>();
         foreach (int stat in new[] { ParamIds.Speed, ParamIds.Stamina, ParamIds.Power, ParamIds.Guts, ParamIds.Wit })
         {
             int current = Get(c.Stats, stat), goal = Get(target, stat), cap = Get(c.MaxStats, stat);
             double weight = current >= cap ? 0
                 : current >= goal ? Priority[stat] * 0.15
-                : Priority[stat] * (0.25 + 0.75 * (goal - current) / (double)goal);
+                : Priority[stat] * (0.25 + 0.5 * Math.Min((goal - current) / (goal * toGain), 1.5));
             weights[stat] = weight;
         }
 

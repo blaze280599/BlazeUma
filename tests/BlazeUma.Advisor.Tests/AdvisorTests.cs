@@ -204,7 +204,9 @@ public class TrainingPartnerTests
         double alone = Score(TrainingIds.Speed).Score;
         double card = Score(TrainingIds.Speed, 1).Score - alone;    // Tanino Gimlet, bond 20
         double npc = Score(TrainingIds.Speed, 102).Score - alone;   // Director Akikawa, bond 16
-        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa()), new FakeGameData());
+        // Same commands as Score: stat targets (and so weights) depend on the gains on offer.
+        var ctx = new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(), commands: [Snapshots.Train(TrainingIds.Speed, 0, -20, ("speed", 10))]),
+            new FakeGameData());
         Assert.Equal(new ValueModel(ctx).BondTrainingValue(20, TrainingIds.Power, new SupportCardEffects(30, 20, 0)), card, 3);
         Assert.Equal(ValueModel.BondValuePerPartner * (1 - 14 / 48.0) * 0.5, npc, 3);
     }
@@ -258,9 +260,10 @@ public class ValueModelTests
     [Fact]
     public void StatAtCap_HasNoValue_AndStaminaTargetFollowsLongestGoal()
     {
-        var model = Model(stats: new Stats(1404, 100, 140, 140, 110));
+        var model = Model(stats: new Stats(1404, 600, 700, 300, 700));
         Assert.Equal(0, model.Weight(ParamIds.Speed));
         // Arima Kinen 2500 m at capped Speed drives the target: a pace chaser needs ~1100+ (checked in Umalator).
+        // The projected budget (~4900) covers it, so the race requirement, not Stamina's share, sets the target.
         Assert.InRange(model.Targets.Target.Stamina, 1100, 1404);
     }
 }
@@ -346,12 +349,11 @@ public class UmaGuideRuleTests
             story: new StoryEvent(501_009_000 + eventKey, 1, 1009, 0, 1, LooksActive: true), choices: choices));
 
     [Fact]
-    public void Targets_CapSpeed_AndRaisePowerAndWit()
+    public void Targets_FollowTheStatPriority_WithinReach()
     {
+        // Turn 14 with ~20-stat trainings projects ~1900 in all: Speed ≈ Stamina > Power ≈ Wit > Guts, Speed short of the cap.
         var target = new ValueModel(Context()).Targets.Target;
-        Assert.Equal(1404, target.Speed);
-        Assert.Equal(900, target.Power);   // pace chaser
-        Assert.Equal(1000, target.Wit);
+        Assert.True(target.Speed < 1404 && target.Speed >= target.Power && target.Power >= target.Guts && target.Wit >= target.Guts);
     }
 
     [Fact]
