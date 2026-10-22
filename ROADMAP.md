@@ -228,8 +228,8 @@ message says which logged picks it changed. The logs are thin so far (~24 record
   there are enough samples; equal weights otherwise.
 
 **Wave 3**
-- A5. [ ] **Recovery skills lower the Stamina target** (`SkillAdvisor`, `ValueModel`).
-- A6. [ ] **Back-to-back race penalty** (`RaceEvaluator`): count the run of races in a row; 3+ risks stats and
+- A5. [x] **Recovery skills lower the Stamina target** (`SkillAdvisor`, `ValueModel`).
+- A6. [x] **Back-to-back race penalty** (`RaceEvaluator`): count the run of races in a row; 3+ risks stats and
   bad conditions.
 
 **Wave 4**
