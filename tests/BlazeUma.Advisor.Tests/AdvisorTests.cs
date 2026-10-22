@@ -275,15 +275,35 @@ public class SkillAdvisorTests
         new(new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(hints: [new SkillHint(20071, 1, 1)]), turn: turn), new FakeGameData()));
 
     [Fact]
-    public void FromShop_OffersOnlyTheNextSkillInEachRow()
+    public void FromShop_PricesAnUpgradeWithTheStepsBeforeIt()
     {
-        ShopSkill Skill(int id, int row, int step, bool obtained = false) => new(id, 100, 100, 0, 0, obtained, false, false, row, step);
-        // Row 0 is a ○ → ◎ pair (◎ needs ○ first); row 1 a single skill.
-        var shop = new SkillShop(500, [Skill(200712, 0, 0), Skill(200722, 0, 1), Skill(200572, 1, 0)]);
-        Assert.Equal([200572, 200712], Advisor().FromShop(shop).Select(c => c.Skill.Id).Order());
+        ShopSkill Skill(int id, int row, int step, bool obtained = false, int price = 100) => new(id, price, price, 0, 0, obtained, false, false, row, step);
+        // Row 0 is a ○ → ◎ pair (◎ needs ○ first, its price is for ◎ alone); row 1 a single skill.
+        var shop = new SkillShop(500, [Skill(200712, 0, 0, price: 54), Skill(200722, 0, 1, price: 66), Skill(200572, 1, 0)]);
+        var candidates = Advisor().FromShop(shop);
+        Assert.Equal([200572, 200712, 200722], candidates.Select(c => c.Skill.Id).Order());
+        var upgrade = candidates.Single(c => c.Skill.Id == 200722);
+        Assert.Equal(120, upgrade.Price);
+        Assert.Equal([200712, 200722], upgrade.Steps);
 
-        var afterFirst = new SkillShop(500, [Skill(200712, 0, 0, obtained: true), Skill(200722, 0, 1), Skill(200572, 1, 0)]);
-        Assert.Equal([200572, 200722], Advisor().FromShop(afterFirst).Select(c => c.Skill.Id).Order());
+        var afterFirst = new SkillShop(500, [Skill(200712, 0, 0, obtained: true), Skill(200722, 0, 1, price: 66), Skill(200572, 1, 0)]);
+        var single = Advisor().FromShop(afterFirst);
+        Assert.Equal([200572, 200722], single.Select(c => c.Skill.Id).Order());
+        Assert.Equal([200722], single.Single(c => c.Skill.Id == 200722).Steps);
+    }
+
+    [Fact]
+    public void Plan_BuysOneCandidatePerRow_PreferringTheUpgrade()
+    {
+        // Turn 28: Tulip Sho is next turn, so buying is on.
+        var advisor = new SkillAdvisor(new CareerContext(Snapshots.Snapshot(Snapshots.Daiwa(), turn: 28), new FakeGameData()));
+        var circle = advisor.Score(new SkillInfo(1, "Maverick ○", 1, 9, 129, 90, "", 27), 54) with { Row = 0, Presses = [1] };
+        var double_ = advisor.Score(new SkillInfo(2, "Maverick ◎", 1, 9, 174, 110, "", 27), 120) with { Row = 0, Presses = [1, 2] };
+        var (buy, _) = advisor.Plan([circle, double_], 500);
+        Assert.Equal([1, 2], buy.SelectMany(b => b.Steps));
+
+        var (short_, _) = advisor.Plan([circle, double_], 100);   // ◎ doesn't fit: ○ alone
+        Assert.Equal([1], short_.SelectMany(b => b.Steps));
     }
 
     [Fact]

@@ -100,13 +100,23 @@ public sealed class CareerAdvisor(IGameData data, EventOdds? odds = null)
         // half-finished purchase (turn 53: 542 SP showing 58) is still planned rather than dropped.
         int points = shop.RemainingPoints + shop.Skills.Where(s => s.Selected && !s.Obtained).Sum(s => s.Price);
         var (buy, why) = advisor.Plan(candidates, points);
+        // A ◎ still needing its ○ takes two presses of the row's +; say so, with what each press costs.
+        string Price(SkillAdvisor.Candidate c) => c.Steps.Count == 1 ? $"{c.Price} SP"
+            : $"{string.Join(" + ", c.Steps.Select(id => shop.Skills.First(s => s.SkillId == id).Price))} = {c.Price} SP";
+        string Presses(SkillAdvisor.Candidate c) => c.Steps.Count switch { 1 => "press + once", 2 => "press + twice", var n => $"press + {n} times" };
+        string Status(SkillAdvisor.Candidate c) =>
+            buy.Contains(c) ? $"BUY: {Presses(c)}"
+            : buy.FirstOrDefault(b => b.Row == c.Row && b.Steps.Contains(c.Skill.Id)) is { } upgrade ? $"bought as part of {upgrade.Skill.Name}"
+            : "skip for now";
         var options = candidates.OrderByDescending(c => c.PerPoint)
-            .Select(c => new ScoredOption($"{c.Skill.Name} ({c.Price} SP)", c.PerPoint * 100,
-                [buy.Contains(c) ? "BUY" : "skip for now", $"fit {c.Fit:P0}", $"rating {c.Skill.GradeValue}"]))
+            .Select(c => new ScoredOption($"{c.Skill.Name} ({Price(c)})", c.PerPoint * 100,
+                [Status(c), $"fit {c.Fit:P0}", $"rating {c.Skill.GradeValue}"]))
             .ToList();
-        string summary = buy.Count > 0 ? $"Buy {string.Join(", ", buy.Select(b => b.Skill.Name))}" : "Buy nothing yet";
+        string summary = buy.Count > 0
+            ? $"Buy {string.Join(", ", buy.Select(b => b.Steps.Count > 1 ? $"{b.Skill.Name} ({Presses(b)})" : b.Skill.Name))}"
+            : "Buy nothing yet";
         notes.Add(new Note("Why", why));
-        return new Advice(Situation.SkillShop, header, summary, options, notes, details, buy.Select(b => b.Skill.Id).ToList());
+        return new Advice(Situation.SkillShop, header, summary, options, notes, details, buy.SelectMany(b => b.Steps).ToList());
     }
 
     private static Advice RaceListAdvice(CareerContext ctx, ValueModel values, string header, RaceList list, List<Note> notes, List<string> details)

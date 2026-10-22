@@ -12,21 +12,34 @@ public sealed class SkillAdvisor(CareerContext ctx)
     /// <summary>Hint discount per hint level (URA). Level 1 = 10% is confirmed in game; higher levels are community values.</summary>
     private static readonly int[] HintDiscount = [0, 10, 20, 30, 35, 40];
 
-    public sealed record Candidate(SkillInfo Skill, int Price, double Fit, double Value)
+    /// <param name="Row">Skill screen row (-1 when predicted); one candidate per row is bought.</param>
+    /// <param name="Presses">Skill ids selected with the row's +, in order: ○ then ◎ when both are still to learn.</param>
+    public sealed record Candidate(SkillInfo Skill, int Price, double Fit, double Value, int Row = -1, IReadOnlyList<int>? Presses = null)
     {
         public double PerPoint => Price > 0 ? Value / Price : 0;
+        public IReadOnlyList<int> Steps => Presses ?? [Skill.Id];
     }
 
     /// <summary>
-    /// Candidates from the open skill screen: only the next skill in each row, since ◎ can only be learned
-    /// after the ○ before it (its listed price is for ◎ alone).
+    /// Candidates from the open skill screen: the next skill in each row, and each upgrade after it priced with
+    /// the steps before it, since ◎ can only be learned after the ○ before it (its listed price is for ◎ alone).
     /// </summary>
-    public IReadOnlyList<Candidate> FromShop(SkillShop shop) =>
-        shop.Skills.Where(s => !s.Obtained).GroupBy(s => s.Row).Select(row => row.MinBy(s => s.Step)!)
-            .Where(s => !s.Locked)
-            .Select(s => ctx.Data.Skill(s.SkillId) is { } info ? Score(info, s.Price) : null)
-            .OfType<Candidate>()
-            .ToList();
+    public IReadOnlyList<Candidate> FromShop(SkillShop shop)
+    {
+        var list = new List<Candidate>();
+        foreach (var row in shop.Skills.Where(s => !s.Obtained).GroupBy(s => s.Row))
+        {
+            var steps = row.OrderBy(s => s.Step).ToList();
+            if (steps[0].Locked) continue;
+            for (int i = 0; i < steps.Count; i++)
+                if (ctx.Data.Skill(steps[i].SkillId) is { } info)
+                    list.Add(Score(info, steps.Take(i + 1).Sum(s => s.Price)) with
+                    {
+                        Row = row.Key, Presses = [.. steps.Take(i + 1).Select(s => s.SkillId)],
+                    });
+        }
+        return list;
+    }
 
     /// <summary>Candidates predicted from game data when the skill screen is closed.</summary>
     public IReadOnlyList<Candidate> Predicted()
@@ -162,7 +175,8 @@ public sealed class SkillAdvisor(CareerContext ctx)
     /// <summary>
     /// Purchases to make now: only when a goal race is today or next turn, or the career is ending.
     /// Before a goal race, only skills that work in that race (its distance and surface) are bought; the
-    /// rest wait for a race they help. Greedy by value per point.
+    /// rest wait for a race they help. Greedy by value per point; a row's upgrade (○ → ◎) replaces its lower
+    /// step when the extra points fit, and a lower step never replaces a bought upgrade.
     /// </summary>
     public (IReadOnlyList<Candidate> Buy, string Reason) Plan(IReadOnlyList<Candidate> candidates, int skillPoints)
     {
@@ -178,6 +192,14 @@ public sealed class SkillAdvisor(CareerContext ctx)
         int left = skillPoints;
         foreach (var c in candidates.Where(Useful).OrderByDescending(c => c.PerPoint))
         {
+            if (c.Row >= 0 && buy.FindIndex(b => b.Row == c.Row) is var same and >= 0)
+            {
+                int extra = c.Price - buy[same].Price;
+                if (c.Steps.Count <= buy[same].Steps.Count || extra > left) continue;
+                buy[same] = c;
+                left -= extra;
+                continue;
+            }
             if (c.Price > left) continue;
             buy.Add(c);
             left -= c.Price;
