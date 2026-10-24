@@ -62,6 +62,9 @@ public static class CareerLogs
         Read(file).Where(r => r is { Kind: "turn", Outcome: { InferredAction: "race" } o } && r.Outcome!.NextTurn == r.Outcome.Turn + 1)
             .Select(r => r.Outcome!.Turn).ToList();
 
+    /// <summary>The races a log's "race-result" records show, with each race's final placing and runs.</summary>
+    public static RaceSummary Races(string file) => RaceSummary.From(Read(file));
+
     /// <summary>Counts what each event choice did ("event-result" records); ambiguous results are left out.</summary>
     public static OddsCount CountEventOdds(IReadOnlyList<string> files)
     {

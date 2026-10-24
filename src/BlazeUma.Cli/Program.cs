@@ -2,13 +2,14 @@
 
 // BlazeUma.exe: an interactive console app. The main menu picks the mode: Advisor (you play, it recommends)
 // or Auto bot (it plays; Insert pauses, Page Down stops). The command-line uses are `replay`
-// (see ReplayCommand) and `event-odds` (see EventOddsCommand).
+// (see ReplayCommand), `event-odds` (see EventOddsCommand) and `races` (see RacesCommand).
 
 if (args is ["replay", .. var replayArgs]) return ReplayCommand.Run(replayArgs);
 if (args is ["event-odds", .. var oddsArgs]) return EventOddsCommand.Run(oddsArgs);
 if (args is ["buttons", .. var buttonArgs]) return ButtonsCommand.Run(buttonArgs);
 if (args is ["fields", .. var fieldArgs]) return FieldsCommand.Run(fieldArgs);
 if (args is ["uistate", .. var uiArgs]) return UiStateCommand.Run(uiArgs);
+if (args is ["races", .. var raceArgs]) return RacesCommand.Run(raceArgs);
 
 ConsoleUi.Setup();
 using var control = new BotControl();

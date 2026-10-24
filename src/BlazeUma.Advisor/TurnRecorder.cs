@@ -17,11 +17,11 @@ public sealed record TurnOutcome(
 
 /// <summary>One line of the career log.</summary>
 /// <param name="Kind">"turn" (advice at the start of a turn and what followed), "event" (an event shown), or
-/// "event-result" (what that event actually did, for measuring outcome odds).</param>
+/// "event-result" (what that event actually did, for measuring outcome odds), or "race-result" (a race's placing).</param>
 public sealed record LogRecord(
     string Kind, int Turn, DateTimeOffset At, string Summary,
     IReadOnlyList<ScoredOption> Options, CareerSnapshot Snapshot, TurnOutcome? Outcome, int? StoryId,
-    EventResult? Result = null)
+    EventResult? Result = null, RaceRecord? Race = null)
 {
     /// <summary>How log lines are written and read back: nulls left out, enums by name.</summary>
     public static readonly JsonSerializerOptions JsonOptions = new()
@@ -39,6 +39,13 @@ public sealed record LogRecord(
 public sealed record EventResult(int StoryId, int? Choice, int? Outcome, double MatchError, TurnOutcome Change);
 
 /// <summary>
+/// One run of a race, read from its results list: the trainee's 1-based <paramref name="Place"/>, and which run of
+/// this race on this turn it was (<paramref name="Attempt"/> 2+ after Try Again). <paramref name="AlarmClocks"/> is
+/// the count left as the results showed.
+/// </summary>
+public sealed record RaceRecord(int RaceInstanceId, int Seed, int Place, int Runners, int? FansGained, int Attempt, int? AlarmClocks);
+
+/// <summary>
 /// Turns a stream of snapshots into log records: one per completed turn (start-of-turn advice plus the
 /// measured outcome) and one per event shown. Pure logic; the caller decides where records go.
 /// </summary>
@@ -48,6 +55,7 @@ public sealed class TurnRecorder
     private Advice? _startAdvice;
     private int? _lastEventStory;
     private CareerSnapshot? _pendingEvent;
+    private (int Turn, int RaceInstanceId, int Seed, int Attempt)? _lastRace;
 
     /// <summary>
     /// The change across an event, and the preview outcome nearest to it: stat, energy, mood and skill-point
@@ -112,6 +120,7 @@ public sealed class TurnRecorder
         NewCareer = false;
         var records = new List<LogRecord>();
         if (snapshot.Turn is not int turn || snapshot.Character is null) return records;
+        records.AddRange(ObserveRace(snapshot));
 
         bool newEvent = advice.Situation == Situation.Event && snapshot.Story is { } shown && shown.StoryId != _lastEventStory;
         // An event with choices is resolved by the next screen that is not that event (home, or the next event).
@@ -147,6 +156,20 @@ public sealed class TurnRecorder
         _start = snapshot;
         _startAdvice = advice;
         return records;
+    }
+
+    /// <summary>
+    /// A "race-result" record the first time a results list shows a race run (told apart by its seed); none
+    /// otherwise. The auto bot calls this on its own from the race screens, where it takes no advice.
+    /// </summary>
+    public IReadOnlyList<LogRecord> ObserveRace(CareerSnapshot snapshot)
+    {
+        if (snapshot is not { Turn: int turn, Character: not null, RaceResult: { } result } || _lastRace?.Seed == result.Seed) return [];
+        int attempt = _lastRace is { } last && last.Turn == turn && last.RaceInstanceId == result.RaceInstanceId ? last.Attempt + 1 : 1;
+        _lastRace = (turn, result.RaceInstanceId, result.Seed, attempt);
+        var race = new RaceRecord(result.RaceInstanceId, result.Seed, result.Place, result.Runners, result.FansGained, attempt, snapshot.AlarmClocks);
+        return [new LogRecord("race-result", turn, snapshot.ReadAt, $"{RaceSummary.Ordinal(result.Place)} of {result.Runners}", [], snapshot,
+            null, null, Race: race)];
     }
 
     public static TurnOutcome Compare(CareerSnapshot from, CareerSnapshot to)

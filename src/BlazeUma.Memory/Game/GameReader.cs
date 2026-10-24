@@ -11,6 +11,8 @@ public sealed class GameReader : IDisposable
 {
     private const string SkillScreen = "Gallop.SingleModeSkillLearningViewController";
     private const string RaceScreen = "Gallop.SingleModeRaceEntryViewController";
+    /// <summary>Screens whose controller has a results list (Controller._resultList): View Results opens it over the paddock.</summary>
+    private static readonly string[] ResultScreens = ["Gallop.SingleModePaddockViewController", "Gallop.RaceMainViewController"];
 
     private readonly GameProcess _process;
     private readonly ManagedReader _r;
@@ -123,13 +125,31 @@ public sealed class GameReader : IDisposable
             EventChoicesEventId: active ? _r.Int(sm, "_cachedRewardEventId") : null,
             SkillShop: screen?.ViewController == SkillScreen ? Section("skillShop", ReadSkillShop) : null,
             RaceList: screen?.ViewController == RaceScreen ? Section("raceList", ReadRaceList) : null,
-            Errors: errors);
+            Errors: errors,
+            RaceResult: active && ResultScreens.Contains(screen?.ViewController) ? Section("raceResult", ReadRaceResult) : null);
     }
 
     private ulong CurrentViewController()
     {
         ulong scene = _r.SingletonInstance("Gallop.SceneManager");
         return scene == 0 ? 0 : _r.Ptr(scene, "_currentViewController");
+    }
+
+    /// <summary>
+    /// The trainee's place from the open results list: RaceInfo.PlayerTeamTopFinishOrderHorse.FinishOrder (0 = 1st),
+    /// with the race instance, runner count and fans gained. Null while no results list has a race.
+    /// </summary>
+    private RaceResult? ReadRaceResult()
+    {
+        ulong list = _r.Ptr(CurrentViewController(), "_resultList");
+        ulong info = list == 0 ? 0 : _r.Ptr(list, "_raceInfo");
+        if (info == 0) return null;
+        ulong horse = _r.Ptr(info, "<PlayerTeamTopFinishOrderHorse>k__BackingField");
+        ulong instance = _r.Ptr(info, "_raceInstanceMaster");
+        if (horse == 0 || instance == 0) return null;
+        ulong reward = _r.Ptr(info, "RaceRewardSingle");
+        return new RaceResult(_r.Int(instance, "Id"), _r.Int(info, "<RandomSeed>k__BackingField"), _r.Int(horse, "FinishOrder") + 1,
+            _r.Int(info, "<NumRaceHorses>k__BackingField"), reward == 0 ? null : _r.Int(reward, "RaceGainedFanCount"));
     }
 
     private Screen? ReadScreen()

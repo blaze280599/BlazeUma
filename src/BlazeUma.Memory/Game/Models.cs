@@ -99,6 +99,13 @@ public sealed record RaceEntry(int ProgramId, int RaceInstanceId, int NeedFans, 
 
 public sealed record RaceList(int DisplayTurn, IReadOnlyList<RaceEntry> Races);
 
+/// <summary>
+/// The trainee's result in a race, from the results list (RaceResultList._raceInfo, seen live 2026-10-24):
+/// <paramref name="Place"/> is 1-based (HorseData.FinishOrder + 1) among <paramref name="Runners"/>.
+/// <paramref name="Seed"/> is the race's random seed, which tells a retried run of the same race apart.
+/// </summary>
+public sealed record RaceResult(int RaceInstanceId, int Seed, int Place, int Runners, int? FansGained);
+
 public sealed record SkillShop(int RemainingPoints, IReadOnlyList<ShopSkill> Skills);
 
 public sealed record CareerSnapshot(
@@ -122,4 +129,6 @@ public sealed record CareerSnapshot(
     /// Earlier turns of this career the trainee raced on, from the turn log (not read from memory); null when no
     /// log was kept. Filled by <c>RaceHistory</c> in BlazeUma.Advisor.
     /// </summary>
-    IReadOnlyList<int>? RaceTurns = null);
+    IReadOnlyList<int>? RaceTurns = null,
+    /// <summary>The results list's race, while a results list is open (paddock or race screen); else null.</summary>
+    RaceResult? RaceResult = null);

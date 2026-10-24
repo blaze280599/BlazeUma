@@ -41,6 +41,25 @@ internal sealed class CareerLog(string directory, JsonSerializerOptions json)
                 Resumed = false;
             }
         }
+        Write(records);
+    }
+
+    /// <summary>
+    /// Logs the race on an open results list (<see cref="TurnRecorder.ObserveRace"/>); the auto bot calls it from the
+    /// race screens, where it reads no advice. Returns the placing logged, or null when it was already logged.
+    /// </summary>
+    public RaceRecord? RecordRace(CareerSnapshot snapshot)
+    {
+        var records = _recorder.ObserveRace(Stamp(snapshot));
+        Write(records);
+        return records.FirstOrDefault()?.Race;
+    }
+
+    /// <summary>This career's races so far, from its log.</summary>
+    public RaceSummary Races() => CurrentPath is { } path && File.Exists(path) ? CareerLogs.Races(path) : RaceSummary.Empty;
+
+    private void Write(IReadOnlyList<LogRecord> records)
+    {
         if (CurrentPath is null || records.Count == 0) return;
         Directory.CreateDirectory(directory);
         var lines = records.Select(r => JsonSerializer.Serialize(r, json)).ToList();

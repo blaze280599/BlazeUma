@@ -313,7 +313,7 @@ internal sealed class AutoBot(BotControl control)
         // Finish tapped on "Complete Career": the career is over; the stats were read just before.
         if (result == Outcome.Done && actionTapped && action == ActionPlanner.CompleteCareer)
         {
-            LastCareer = CompletedCareer.From(snapshot, data);
+            LastCareer = CompletedCareer.From(snapshot, data, _log!.Races());
             return (Outcome.CareerCompleted, null);
         }
         if (result == Outcome.Done) Thread.Sleep(Settle);
@@ -453,7 +453,7 @@ internal sealed class AutoBot(BotControl control)
         if (plan.RunsRace && (resume || TurnNow(reader) <= startTurn))
         {
             Console.WriteLine(ConsoleUi.Dim("   Running the race:"));
-            if (RaceRunner.Run(reader, tapper, startTurn, RaceStep, resume) != 0)
+            if (RaceRunner.Run(reader, tapper, startTurn, RaceStep, resume, () => LogRace(reader)) != 0)
             {
                 if (control.Halting) return Outcome.Interrupted;
                 problem = "The race screens need you (see above). Finish them by hand, or resume to try again.";
@@ -598,6 +598,18 @@ internal sealed class AutoBot(BotControl control)
         // _inputBlock is an invisible full-screen blocker; tapping it can count as tapping outside (cancel).
         new ButtonFinder(r).FromCurrentScene()
             .Where(b => b.CanTap && b.Path.StartsWith("Dialog[") && !b.Path.EndsWith("_inputBlock")).ToList();
+
+    /// <summary>Logs the placing on the open results list; a failed read only loses this race's line.</summary>
+    private void LogRace(GameReader reader)
+    {
+        try
+        {
+            if (_log!.RecordRace(reader.Snapshot()) is { } race)
+                Console.WriteLine(ConsoleUi.Dim($"   Placed {RaceSummary.Ordinal(race.Place)} of {race.Runners}"
+                    + (race.Attempt > 1 ? $" (run {race.Attempt})" : "") + (race.AlarmClocks is int c ? $"; {c} alarm clocks left." : ".")));
+        }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { }
+    }
 
     private static int TurnNow(GameReader reader)
     {

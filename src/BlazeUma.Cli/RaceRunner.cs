@@ -24,6 +24,7 @@ internal static class RaceRunner
     private const string EntryConfirmTitle = "Race Details";
     /// <summary>Shown after losing a goal race (DialogSingleModeRouteContinue): Cancel / Try Again.</summary>
     private const string TryAgainTitle = "Try Again", RetryLabel = "Try Again";
+    private const string LeaveResults = "Next (leave the results)";
     /// <summary>Shown when View Results is tapped for a race never watched before (padlock on the button).</summary>
     private const string LockedTitle = "Unlock Requirements";
     /// <summary>Popups that follow a race; open on the home screen they still mean the race is being finished.</summary>
@@ -41,14 +42,14 @@ internal static class RaceRunner
         new("Gallop.SingleModePaddockViewController", "Controller._cutinParent._tapButton", "Tap through the placing", Repeat: true),
         // After View Results the results list ("Congratulations on the win!", placings, Next) opens over the paddock,
         // not on the race screen (seen live after a skipped Junior Make Debut).
-        new("Gallop.SingleModePaddockViewController", "Controller._resultList._singleModeNextButton", "Next (leave the results)"),
-        new("Gallop.SingleModePaddockViewController", "Controller._resultList._nextButton", "Next (leave the results)"),
+        new("Gallop.SingleModePaddockViewController", "Controller._resultList._singleModeNextButton", LeaveResults),
+        new("Gallop.SingleModePaddockViewController", "Controller._resultList._nextButton", LeaveResults),
         new("Gallop.SingleModePaddockViewController", "View.PaddockContentsHolder._raceSkipButton", "View Results (skip watching the race)"),
         // View Results is locked until a race has been watched once; then the race is run and skipped in-race.
         new("Gallop.SingleModePaddockViewController", "View.PaddockContentsHolder._raceStartButtonRight", "Race (View Results is locked)"),
         new("Gallop.SingleModePaddockViewController", "View.PaddockContentsHolder._raceStartButtonCenter", "Race (View Results is locked)"),
-        new("Gallop.RaceMainViewController", "Controller._resultList._singleModeNextButton", "Next (leave the results)"),
-        new("Gallop.RaceMainViewController", "Controller._resultList._nextButton", "Next (leave the results)"),
+        new("Gallop.RaceMainViewController", "Controller._resultList._singleModeNextButton", LeaveResults),
+        new("Gallop.RaceMainViewController", "Controller._resultList._nextButton", LeaveResults),
         new("Gallop.RaceMainViewController", "Controller._raceResultSceneUI._skipButton", "Skip the finish scene"),
         // Runner list shown before a watched race (View Results locked): its Race! button starts it. Before the
         // in-race buttons: fast-forward is also visible on the runner list and would be spent before the start.
@@ -67,7 +68,9 @@ internal static class RaceRunner
     /// <param name="ask">Asks before a tap; returns 'q' to stop, 's' to skip, anything else to tap.</param>
     /// <returns>0 when home on a later turn, 1 when stopped (by the user, a failed tap or an unmapped screen).</returns>
     /// <param name="resumed">Started mid-race (possibly after the turn already moved on): home settling is enough.</param>
-    public static int Run(GameReader reader, ButtonTapper tapper, int startTurn, Func<string, char> ask, bool resumed = false)
+    /// <param name="onResults">Called with a results list open, just before its Next is tapped (to log the placing).</param>
+    public static int Run(GameReader reader, ButtonTapper tapper, int startTurn, Func<string, char> ask, bool resumed = false,
+        Action? onResults = null)
     {
         var settled = Stopwatch.StartNew();
         var buttonless = Stopwatch.StartNew();   // how long the open dialog has shown no buttons
@@ -160,6 +163,7 @@ internal static class RaceRunner
                 case 'q': Console.WriteLine("Stopped. Nothing else was tapped."); return 1;
                 case 's': Console.WriteLine("Skipped; continue by hand."); return 1;
             }
+            if (description == LeaveResults) onResults?.Invoke();
             string reply = TapButton(r, tapper, button);
             if (!reply.StartsWith("ok")) { Console.WriteLine($"   Tap failed: {reply}"); return 1; }
             if (!button.Path.StartsWith("Dialog[")) lastRule = button.Path;

@@ -86,6 +86,17 @@ game data comes from the `master.mdb` copy in `%LOCALAPPDATA%\BlazeUma` (or `--d
 
 It ends with counts of records replayed, flips, and records that could not be read or advised (with the reason).
 
+### Race results
+
+The bot and Advisor mode log each race's placing as the results list shows it ("race-result" records: place,
+runners, fans, which run it was after Try Again, alarm clocks left). `races` lists each career's races and a verdict
+such as "7 wins from 9 races, 2 retries, 1 goal race missed"; the bot's Career completed screen shows that line too.
+
+```powershell
+.\publish\BlazeUma.exe races                            # every career in the shared log folder
+.\publish\BlazeUma.exe races "$HOME\BlazeUma\logs\career-....jsonl"
+```
+
 ### Event odds
 
 The bot and Advisor mode rebuild event odds from every log in the shared folder when they start (the bot prints
