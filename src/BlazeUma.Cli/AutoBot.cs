@@ -30,10 +30,17 @@ internal sealed class AutoBot(BotControl control)
     private static readonly TimeSpan MenuAnimation = TimeSpan.FromMilliseconds(600);
     /// <summary>Pause before every tap, so menus and popups finish animating (tuned by eye on the live game).</summary>
     private static readonly TimeSpan StepGap = TimeSpan.FromSeconds(1);
+    /// <summary>How long the game may stay busy (screen change, input lock, an event scene) before the bot asks for help.</summary>
+    private static readonly TimeSpan BusyLimit = TimeSpan.FromSeconds(90);
+    /// <summary>How long a step waits for a screen change or input lock to end before leaving the plan to the next round.</summary>
+    private static readonly TimeSpan StepReadyLimit = TimeSpan.FromSeconds(10);
 
-    private enum Outcome { Done, Interrupted, NeedsYou, CareerCompleted }
+    /// <summary><see cref="Deferred"/>: the plan stopped before a tap because the game got busy; the next round reads it afresh.</summary>
+    private enum Outcome { Done, Interrupted, NeedsYou, CareerCompleted, Deferred }
 
     private Stopwatch? _idle;
+    /// <summary>Since when the game has been busy (<see cref="Busy"/>); null while it takes taps.</summary>
+    private Stopwatch? _busy;
     private int _turn, _actionsThisTurn;
     /// <summary>
     /// A turn whose action already went through (it ended in an event). After the event the home screen can
@@ -115,6 +122,7 @@ internal sealed class AutoBot(BotControl control)
         var advisor = new CareerAdvisor(data, odds);
         EnsureFastCutscenes(reader);
         _idle = null;
+        _busy = null;
         _turn = -1;
         _spentTurn = -1;
         _skillsTurn = -1;
@@ -179,6 +187,7 @@ internal sealed class AutoBot(BotControl control)
         if (choice == 1) return false;
         Console.WriteLine("  " + ConsoleUi.Bold("Resuming.") + ConsoleUi.Dim("  Insert = pause · Page Down = stop"));
         _idle = null;
+        _busy = null;
         _actionsThisTurn = 0;
         _spentTurn = -1;   // the user has looked at the game; judge the turn afresh
         control.Arm();
@@ -188,13 +197,22 @@ internal sealed class AutoBot(BotControl control)
     /// <summary>Reads the game and carries out one advisor pick.</summary>
     private (Outcome, string?) Round(GameReader reader, CareerAdvisor advisor, MasterDatabase data)
     {
+        var r = reader.ManagedReader;
+        // Nothing is tapped while the game loads, changes screens or locks input.
+        if (UiState.Busy(r) is { } busy) return Busy(busy);
+        bool storyPlaying = UiState.StoryPlaying(r);
         // A goal met outside a race (a fan goal reached by a training) opens "Goal Achieved" over the home screen.
-        if (RaceRunner.CloseGoalAchieved(reader, new ButtonTapper(reader))) { Thread.Sleep(Settle); return (Outcome.Done, null); }
+        if (!storyPlaying && RaceRunner.CloseGoalAchieved(reader, new ButtonTapper(reader))) { Thread.Sleep(Settle); return (Outcome.Done, null); }
         var snapshot = _log!.Stamp(reader.Snapshot());
         if (snapshot.Screen?.ViewController == InspirationScreen) return (Inspiration(reader), null);
         var advice = advisor.Advise(snapshot);
         _log.Observe(snapshot, advice);
         int turn = snapshot.Turn ?? 0;
+        // An event scene is on screen: only its choices are the bot's to tap. The screen under it (the skill
+        // screen, the home screen) still reads as itself, and taps there freeze the game (turn 41).
+        if (storyPlaying && advice.Situation != Situation.Event) return Busy("an event scene is playing");
+        // Just stopped being busy: give the screen a moment to settle, then read it afresh.
+        if (_busy is not null) { _busy = null; Thread.Sleep(Settle); return (Outcome.Done, null); }
 
         string? action =
             RaceRunner.InProgress(reader.ManagedReader) ? ActionPlanner.GoalRace   // left mid-race (pause, by hand)
@@ -257,6 +275,14 @@ internal sealed class AutoBot(BotControl control)
         if (!plan.IsEvent && !plan.RunsRace)
             WaitUntil(() => TrainingMenu.IsOpen(reader.ManagedReader) != true, TimeSpan.FromSeconds(8));
         var result = Execute(reader, plan, turn, out string? problem, out bool actionTapped);
+        if (result == Outcome.Deferred)
+        {
+            // The skill screen wasn't opened after all; let the next round open it this turn.
+            if (action == ActionPlanner.OpenSkills) _skillsTurn = -1;
+            if (action == ActionPlanner.FinalSkills) _finalSkillsOpened = false;
+            _actionsThisTurn--;
+            return (Outcome.Done, null);
+        }
         // A turn action whose own tap went through and then led to an event (Happy Meek's challenge, a card
         // event…) has used the turn. An event that pops up before that tap (turn 40's camp event) has not.
         // Opening or using the skill screen doesn't use the turn: an event after Tap Skills (turn 41's Dance Lesson)
@@ -274,6 +300,40 @@ internal sealed class AutoBot(BotControl control)
         }
         if (result == Outcome.Done) Thread.Sleep(Settle);
         return (result, problem);
+    }
+
+    /// <summary>Waits a round out while the game is busy; asks for help once it has been busy for <see cref="BusyLimit"/>.</summary>
+    private (Outcome, string?) Busy(string reason)
+    {
+        _idle = null;
+        _busy ??= Stopwatch.StartNew();
+        if (_busy.Elapsed < BusyLimit) { Thread.Sleep(Poll); return (Outcome.Done, null); }
+        _busy = null;
+        return (Outcome.NeedsYou, $"The game has been busy for {BusyLimit.TotalSeconds:0} s ({reason}), so the bot hasn't tapped anything. Check the game, then resume.");
+    }
+
+    /// <summary>
+    /// Waits for the game to take <paramref name="plan"/>'s next tap: no screen change or input lock (up to
+    /// <see cref="StepReadyLimit"/>), and no event scene unless the plan answers that event. Null when it can, else why not.
+    /// </summary>
+    private static string? WaitStepReady(GameReader reader, ActionPlan plan)
+    {
+        var r = reader.ManagedReader;
+        var clock = Stopwatch.StartNew();
+        while (true)
+        {
+            string? busy;
+            try
+            {
+                busy = !plan.IsEvent && UiState.StoryPlaying(r) ? "an event scene started" : UiState.Busy(r);
+                // An event scene won't end within a step's wait: leave it to the next round's event handling.
+                if (busy is "an event scene started") return busy;
+            }
+            catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { busy = "the game can't be read"; }
+            if (busy is null) return null;
+            if (clock.Elapsed >= StepReadyLimit) return busy;
+            Thread.Sleep(Poll);
+        }
     }
 
     /// <summary>The race plan an event interrupted on the race list, and its turn.</summary>
@@ -342,6 +402,11 @@ internal sealed class AutoBot(BotControl control)
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
                 Thread.Sleep(StepGap);
+                if (WaitStepReady(reader, plan) is { } busy)
+                {
+                    Console.WriteLine(ConsoleUi.Dim($"   • Not tapping \"{step.Description}\": {busy}. Picking up when the game is ready."));
+                    return actionTapped ? Outcome.Done : Outcome.Deferred;
+                }
                 var target = step.Resolve(reader);
                 if (target.SkipReason is not null) break;
                 if (target.Error is not null) { problem = $"{plan.Action}, step {i + 1} ({step.Description}): {target.Error}."; return Outcome.NeedsYou; }
@@ -377,7 +442,7 @@ internal sealed class AutoBot(BotControl control)
         // Finish ends the career; the results screens after it are not the bot's to answer.
         if (plan.Action == ActionPlanner.CompleteCareer && actionTapped) return Outcome.Done;
         // Popups that follow an action (the Rest confirmation, …) have a real choice: the user picks.
-        while (TurnNow(reader) <= startTurn && !EventShowing(reader))
+        while (TurnNow(reader) <= startTurn && !EventShowing(reader) && !StoryPlaying(reader))
         {
             var dialog = DialogButtons(r);
             if (dialog.Count == 0) break;
@@ -516,6 +581,12 @@ internal sealed class AutoBot(BotControl control)
     {
         try { return reader.Snapshot().Turn ?? 0; }
         catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { return 0; }
+    }
+
+    private static bool StoryPlaying(GameReader reader)
+    {
+        try { return UiState.StoryPlaying(reader.ManagedReader); }
+        catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException) { return false; }
     }
 
     private static bool EventShowing(GameReader reader)

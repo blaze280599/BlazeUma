@@ -8,6 +8,7 @@ if (args is ["replay", .. var replayArgs]) return ReplayCommand.Run(replayArgs);
 if (args is ["event-odds", .. var oddsArgs]) return EventOddsCommand.Run(oddsArgs);
 if (args is ["buttons", .. var buttonArgs]) return ButtonsCommand.Run(buttonArgs);
 if (args is ["fields", .. var fieldArgs]) return FieldsCommand.Run(fieldArgs);
+if (args is ["uistate", .. var uiArgs]) return UiStateCommand.Run(uiArgs);
 
 ConsoleUi.Setup();
 using var control = new BotControl();

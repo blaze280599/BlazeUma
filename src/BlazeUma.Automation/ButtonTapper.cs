@@ -53,9 +53,31 @@ public sealed class ButtonTapper(GameReader reader)
         return _resolved.Value;
     }
 
+    /// <summary>How long a tap waits for a screen change or input lock to end (<see cref="UiState.Busy"/>) before failing.</summary>
+    private static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Waits until the game can take a tap: no screen change, no input lock. Null when it can, else the agent-style
+    /// error naming what it is busy with. A tap never goes out under a loading screen or a transition.
+    /// </summary>
+    private string? WaitUntilReady()
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        string? busy = null;
+        while (clock.Elapsed < ReadyTimeout)
+        {
+            try { busy = UiState.Busy(reader.ManagedReader); }
+            catch (MemoryReadException e) { busy = $"the game can't be read ({e.Message})"; }
+            if (busy is null) return null;
+            Thread.Sleep(100);
+        }
+        return $"error not tapped: {busy} after {ReadyTimeout.TotalSeconds:0} s";
+    }
+
     /// <summary>Taps the button at <paramref name="button"/>. Returns the agent's reply ("ok" on success).</summary>
     public string Tap(ulong button)
     {
+        if (WaitUntilReady() is { } busy) return busy;
         var (offset, mi, fn) = Resolve();
         ulong eventObj = reader.ManagedReader.Memory.ReadPointer(button + (ulong)offset);
         if (eventObj == 0) return "error button has no m_OnClick handlers";
@@ -74,6 +96,7 @@ public sealed class ButtonTapper(GameReader reader)
         ulong klass = rt.GetClass(className);
         if (klass == 0) return $"error {className} is not initialised yet";
         var (mi, fn) = rt.RequireMethod(klass, method);
+        if (WaitUntilReady() is { } busy) return busy;
         using var agent = AgentClient.Connect(reader.ProcessId);
         return agent.Send($"tap {obj:x} {fn:x} {mi:x}");
     }
@@ -95,6 +118,7 @@ public sealed class ButtonTapper(GameReader reader)
         ulong statics = rt.StaticFieldData(input);
         if (statics == 0) return $"error {InputModuleClass} has no static data yet";
         var (mi, fn) = rt.RequireMethod(klass, method);
+        if (WaitUntilReady() is { } busy) return busy;
         using var agent = AgentClient.Connect(reader.ProcessId);
         return agent.Send($"press {statics + (ulong)field.Offset:x} {obj:x} {fn:x} {mi:x}");
     }
