@@ -34,14 +34,20 @@ internal sealed class AutoBot(BotControl control)
     private static readonly TimeSpan BusyLimit = TimeSpan.FromSeconds(90);
     /// <summary>How long a step waits for a screen change or input lock to end before leaving the plan to the next round.</summary>
     private static readonly TimeSpan StepReadyLimit = TimeSpan.FromSeconds(10);
+    /// <summary>Plans per turn that may stop on an unexpected screen and be planned again from the live screen.</summary>
+    private const int MaxRecoveries = 3;
 
-    /// <summary><see cref="Deferred"/>: the plan stopped before a tap because the game got busy; the next round reads it afresh.</summary>
-    private enum Outcome { Done, Interrupted, NeedsYou, CareerCompleted, Deferred }
+    /// <summary>
+    /// <see cref="Deferred"/>: the plan stopped before a tap because the game got busy; the next round reads it afresh.
+    /// <see cref="Recover"/>: a step found a screen it did not expect before the action's own tap (a dropped tap left
+    /// the race list closed); nothing irreversible was done, so the next round plans again from the screen it finds.
+    /// </summary>
+    private enum Outcome { Done, Interrupted, NeedsYou, CareerCompleted, Deferred, Recover }
 
     private Stopwatch? _idle;
     /// <summary>Since when the game has been busy (<see cref="Busy"/>); null while it takes taps.</summary>
     private Stopwatch? _busy;
-    private int _turn, _actionsThisTurn;
+    private int _turn, _actionsThisTurn, _recoveries;
     /// <summary>
     /// A turn whose action already went through (it ended in an event). After the event the home screen can
     /// show the same turn again for a moment; only events are answered until the turn number moves on.
@@ -129,6 +135,7 @@ internal sealed class AutoBot(BotControl control)
         _finalSkillsOpened = false;
         _completed = false;
         _actionsThisTurn = 0;
+        _recoveries = 0;
         int failures = 0;
         _log = CareerLog.Create();
 
@@ -189,6 +196,7 @@ internal sealed class AutoBot(BotControl control)
         _idle = null;
         _busy = null;
         _actionsThisTurn = 0;
+        _recoveries = 0;
         _spentTurn = -1;   // the user has looked at the game; judge the turn afresh
         control.Arm();
         return true;
@@ -247,6 +255,7 @@ internal sealed class AutoBot(BotControl control)
         {
             _turn = turn;
             _actionsThisTurn = 0;
+            _recoveries = 0;
             Console.WriteLine();
             Console.WriteLine("  " + ConsoleUi.Dim(new string('─', 70)));
             Console.WriteLine("  " + ConsoleUi.Paint(advice.Header, "36"));
@@ -275,7 +284,16 @@ internal sealed class AutoBot(BotControl control)
         if (!plan.IsEvent && !plan.RunsRace)
             WaitUntil(() => TrainingMenu.IsOpen(reader.ManagedReader) != true, TimeSpan.FromSeconds(8));
         var result = Execute(reader, plan, turn, out string? problem, out bool actionTapped);
-        if (result == Outcome.Deferred)
+        if (result == Outcome.Recover)
+        {
+            if (++_recoveries > MaxRecoveries)
+                return (Outcome.NeedsYou, $"{problem} Planned again from the screen {MaxRecoveries} times this turn without getting through.");
+            Console.WriteLine(ConsoleUi.Dim($"   {problem} Reading the screen again to recover (try {_recoveries} of {MaxRecoveries})."));
+            // A race half-entered (the list open, or not yet): carry on with the same race from wherever it is.
+            if (plan.RunsRace) _interruptedRace = (turn, action);
+            Thread.Sleep(Settle);
+        }
+        if (result is Outcome.Deferred or Outcome.Recover)
         {
             // The skill screen wasn't opened after all; let the next round open it this turn.
             if (action == ActionPlanner.OpenSkills) _skillsTurn = -1;
@@ -409,7 +427,11 @@ internal sealed class AutoBot(BotControl control)
                 }
                 var target = step.Resolve(reader);
                 if (target.SkipReason is not null) break;
-                if (target.Error is not null) { problem = $"{plan.Action}, step {i + 1} ({step.Description}): {target.Error}."; return Outcome.NeedsYou; }
+                if (target.Error is not null)
+                {
+                    problem = $"{plan.Action}, step {i + 1} ({step.Description}): {target.Error}.";
+                    return actionTapped ? Outcome.NeedsYou : Outcome.Recover;
+                }
 
                 Console.WriteLine(ConsoleUi.Dim($"   • {step.Description}" + (attempt > 1 ? $" (again, try {attempt})" : "")));
                 string reply = target.Method is not { } m ? tapper.Tap(target.Button)
