@@ -35,6 +35,17 @@ public static class UiState
         return timeline != 0 && r.Bool(timeline, "<IsPlaying>k__BackingField") && !r.Bool(timeline, "<IsFinished>k__BackingField");
     }
 
+    /// <summary>
+    /// The event scene timeline's frame count, or null while the scene waits for a tap (its frame stands still
+    /// then too). A frame that stops moving otherwise means the scene froze (2026-10-24: frame 356 with the race list
+    /// opened over the dialogue and closed again).
+    /// </summary>
+    public static int? StoryFrame(ManagedReader r)
+    {
+        ulong timeline = Timeline(r);
+        return timeline == 0 || r.Bool(timeline, "_isWaitingUserInput") ? null : r.Int(timeline, "_frameCount");
+    }
+
     /// <summary>One line with every signal above and the canvas lock counts, for checking them against the live game.</summary>
     public static string Describe(ManagedReader r)
     {

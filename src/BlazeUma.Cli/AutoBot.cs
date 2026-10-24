@@ -28,8 +28,19 @@ internal sealed class AutoBot(BotControl control)
     private const int MaxSelectTaps = 3;
     /// <summary>The training tiles slide in after the menu reports open; a tap before that can be dropped.</summary>
     private static readonly TimeSpan MenuAnimation = TimeSpan.FromMilliseconds(600);
-    /// <summary>Pause before every tap, so menus and popups finish animating (tuned by eye on the live game).</summary>
+    /// <summary>
+    /// How long the game must stay calm (no event scene, screen change or input lock) before every tap, so menus and
+    /// popups finish animating (tuned by eye on the live game).
+    /// </summary>
     private static readonly TimeSpan StepGap = TimeSpan.FromSeconds(1);
+    /// <summary>
+    /// The same before a plan's first tap. A turn's opening event starts a moment after the home screen shows: on
+    /// turn 56 Races was tapped ~1 s before "A Trainer's Knowledge" began, the list opened over its dialogue, and a
+    /// later time the scene froze for good under it.
+    /// </summary>
+    private static readonly TimeSpan FirstTapCalm = TimeSpan.FromSeconds(3);
+    /// <summary>An event scene whose frame has not moved for this long has frozen (the game is softlocked).</summary>
+    private static readonly TimeSpan FrozenSceneLimit = TimeSpan.FromSeconds(10);
     /// <summary>How long the game may stay busy (screen change, input lock, an event scene) before the bot asks for help.</summary>
     private static readonly TimeSpan BusyLimit = TimeSpan.FromSeconds(90);
     /// <summary>How long a step waits for a screen change or input lock to end before leaving the plan to the next round.</summary>
@@ -47,6 +58,8 @@ internal sealed class AutoBot(BotControl control)
     private Stopwatch? _idle;
     /// <summary>Since when the game has been busy (<see cref="Busy"/>); null while it takes taps.</summary>
     private Stopwatch? _busy;
+    /// <summary>The event scene's last frame, and since when it has stayed there.</summary>
+    private (int Frame, Stopwatch Since)? _sceneFrame;
     private int _turn, _actionsThisTurn, _recoveries;
     /// <summary>
     /// A turn whose action already went through (it ended in an event). After the event the home screen can
@@ -195,6 +208,7 @@ internal sealed class AutoBot(BotControl control)
         Console.WriteLine("  " + ConsoleUi.Bold("Resuming.") + ConsoleUi.Dim("  Insert = pause · Page Down = stop"));
         _idle = null;
         _busy = null;
+        _sceneFrame = null;
         _actionsThisTurn = 0;
         _recoveries = 0;
         _spentTurn = -1;   // the user has looked at the game; judge the turn afresh
@@ -218,7 +232,21 @@ internal sealed class AutoBot(BotControl control)
         int turn = snapshot.Turn ?? 0;
         // An event scene is on screen: only its choices are the bot's to tap. The screen under it (the skill
         // screen, the home screen) still reads as itself, and taps there freeze the game (turn 41).
-        if (storyPlaying && advice.Situation != Situation.Event) return Busy("an event scene is playing");
+        if (storyPlaying && advice.Situation != Situation.Event)
+        {
+            int? frame = UiState.StoryFrame(r);
+            if (frame is null) _sceneFrame = null;
+            else if (_sceneFrame?.Frame != frame) _sceneFrame = (frame.Value, Stopwatch.StartNew());
+            if (_sceneFrame?.Since.Elapsed >= FrozenSceneLimit)
+            {
+                _sceneFrame = null;
+                _busy = null;
+                return (Outcome.NeedsYou, $"The event scene has been stuck on frame {frame} for {FrozenSceneLimit.TotalSeconds:0} s: the game looks "
+                    + "softlocked under it. Tapping won't free it; restart the game (the career resumes on the same turn), then resume.");
+            }
+            return Busy("an event scene is playing");
+        }
+        _sceneFrame = null;
         // Just stopped being busy: give the screen a moment to settle, then read it afresh.
         if (_busy is not null) { _busy = null; Thread.Sleep(Settle); return (Outcome.Done, null); }
 
@@ -331,13 +359,15 @@ internal sealed class AutoBot(BotControl control)
     }
 
     /// <summary>
-    /// Waits for the game to take <paramref name="plan"/>'s next tap: no screen change or input lock (up to
-    /// <see cref="StepReadyLimit"/>), and no event scene unless the plan answers that event. Null when it can, else why not.
+    /// Waits for the game to take <paramref name="plan"/>'s next tap: calm for <paramref name="calm"/> in a row, with
+    /// no screen change or input lock (up to <see cref="StepReadyLimit"/>), and no event scene unless the plan
+    /// answers that event. Null when it can, else why not.
     /// </summary>
-    private static string? WaitStepReady(GameReader reader, ActionPlan plan)
+    private static string? WaitStepReady(GameReader reader, ActionPlan plan, TimeSpan calm)
     {
         var r = reader.ManagedReader;
         var clock = Stopwatch.StartNew();
+        var calmFor = Stopwatch.StartNew();
         while (true)
         {
             string? busy;
@@ -348,8 +378,9 @@ internal sealed class AutoBot(BotControl control)
                 if (busy is "an event scene started") return busy;
             }
             catch (Exception e) when (e is MemoryReadException or UnsupportedLayoutException or InconsistentSnapshotException) { busy = "the game can't be read"; }
-            if (busy is null) return null;
-            if (clock.Elapsed >= StepReadyLimit) return busy;
+            if (busy is not null) calmFor.Restart();
+            else if (calmFor.Elapsed >= calm) return null;
+            if (busy is not null && clock.Elapsed >= StepReadyLimit) return busy;
             Thread.Sleep(Poll);
         }
     }
@@ -419,8 +450,7 @@ internal sealed class AutoBot(BotControl control)
             bool took = true;
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
-                Thread.Sleep(StepGap);
-                if (WaitStepReady(reader, plan) is { } busy)
+                if (WaitStepReady(reader, plan, i == 0 && attempt == 1 ? FirstTapCalm : StepGap) is { } busy)
                 {
                     Console.WriteLine(ConsoleUi.Dim($"   • Not tapping \"{step.Description}\": {busy}. Picking up when the game is ready."));
                     return actionTapped ? Outcome.Done : Outcome.Deferred;
